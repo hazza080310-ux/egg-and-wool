@@ -1,0 +1,132 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EGG &amp; WOOL</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:"Trebuchet MS",Verdana,sans-serif;background:#cdeccd;color:#3a2f25}
+button{font:inherit;font-weight:bold;border:0;border-radius:12px;padding:8px 14px;background:#ff9d2e;color:#fff;cursor:pointer;box-shadow:0 3px 0 #c06d0c}button:active{transform:translateY(2px);box-shadow:none}button:disabled{background:#bbb;box-shadow:none;cursor:default}
+input{font:inherit;padding:10px;border-radius:10px;border:2px solid #8a6;width:100%;margin:5px 0}
+#top{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:#5a3b1e;color:#fff;padding:8px 14px;font-weight:bold}#top .logo{font-size:20px;margin-right:auto;color:#ffd34d}
+#nav{display:flex;gap:6px;padding:8px;background:#7a5a30;flex-wrap:wrap}#nav button{background:#a67c44;box-shadow:0 3px 0 #5a3b1e}#nav button.on{background:#ffd34d;color:#5a3b1e}
+#app{max-width:980px;margin:auto;padding:10px}.card{background:#fffaf0;border:3px solid #8a6a3a;border-radius:16px;padding:12px;margin:10px 0}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}.bl{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:6px 0;font-size:14px}
+.bar,.hp{height:14px;background:#ddd;border-radius:8px;overflow:hidden;margin:6px 0}.bar i,.hp i{display:block;height:100%;background:linear-gradient(#ffe27a,#ffb400);transition:width .4s}.hp i{background:#4c4}
+#scene{position:relative;height:300px;overflow:hidden;border-radius:18px;border:3px solid #8a6a3a;background:linear-gradient(#8fd3ff,#d8f3ff 52%,#7fcf5a 52%,#5ab648)}#scene>svg{position:absolute;inset:0;width:100%;height:100%}
+.ws{position:absolute;transition:left 4s linear,top 4s linear;cursor:pointer}.ws>div{animation:bob .8s ease-in-out infinite alternate}.ws.j>div{animation:jump .4s}
+@keyframes bob{to{transform:translateY(-4px) rotate(2deg)}}@keyframes jump{50%{transform:translateY(-30px) rotate(-10deg)}}
+.cloud{animation:drift 40s linear infinite alternate}@keyframes drift{to{transform:translateX(80px)}}.fl2{animation:bob 1.2s ease-in-out infinite alternate}
+.bub{position:absolute;top:-16px;left:10px;background:#fff;border-radius:10px;padding:2px 8px;font-size:12px;border:2px solid #555;white-space:nowrap;pointer-events:none;animation:pop 1.8s forwards}@keyframes pop{0%{opacity:0;transform:scale(.4)}15%,80%{opacity:1;transform:scale(1)}100%{opacity:0;transform:translateY(-12px)}}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}.sc{background:#fffaf0;border:4px solid;border-radius:14px;padding:8px;text-align:center;cursor:pointer;font-size:12px}.sc.sel{outline:4px solid #ff9d2e}.sc b{display:block;font-size:13px}
+.slots{display:flex;gap:10px;flex-wrap:wrap}.slot{border:3px dashed #8a6a3a;border-radius:14px;padding:6px;text-align:center;cursor:pointer;min-width:110px}
+.badge{display:inline-block;color:#fff;border-radius:8px;padding:1px 8px;font-size:11px;font-weight:bold}
+.eggs{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}.eggs .card{text-align:center;margin:0}.odds{font-size:11px;color:#765}
+#ov{position:fixed;inset:0;background:rgba(30,20,10,.85);display:none;align-items:center;justify-content:center;z-index:9;flex-direction:column;overflow:auto;padding:14px;color:#fff;text-align:center}#ov.on{display:flex}
+.shake{animation:shk .35s infinite}@keyframes shk{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg) translateY(-6px)}}
+.reveal{animation:rv .7s cubic-bezier(.2,1.6,.4,1)}@keyframes rv{from{transform:scale(0) rotate(-90deg)}}
+.cf{position:fixed;top:-20px;width:10px;height:14px;animation:fall 2.5s linear forwards;z-index:10}@keyframes fall{to{transform:translateY(110vh) rotate(720deg)}}
+.arow{display:flex;justify-content:space-around;margin:8px 0}.u{text-align:center;width:31%;font-size:11px;position:relative;transition:transform .2s}.u small{display:block}.u.ko{opacity:.3;filter:grayscale(1)}.u.cur{outline:3px solid #ff9d2e;border-radius:12px}.u.tg{outline:3px dashed #e33;border-radius:12px;cursor:pointer}
+.u.lunge{transform:translateY(-22px) scale(1.12)}.u.hit{animation:shk .25s 2}.fx{position:absolute;left:35%;top:10px;font-weight:bold;font-size:22px;animation:up 1s forwards;text-shadow:0 0 3px #fff}@keyframes up{to{transform:translateY(-40px);opacity:0}}
+#arena{background:linear-gradient(#a8dcff,#9fdc7a);border:3px solid #8a6a3a;border-radius:16px;padding:6px}.log{font-size:13px;max-height:130px;overflow:auto}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 18px;border-radius:12px;opacity:0;transition:.3s;z-index:20;pointer-events:none}#toast.on{opacity:1}
+table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid #ddc;text-align:left}
+</style></head><body>
+<div id="top"></div><div id="nav"></div><div id="app"></div><div id="ov" onclick="if(event.target.id=='ov')closeOv()"></div><div id="toast"></div>
+<script src="shared.js"></script>
+<script>
+let T=localStorage.tok,D,BV,tab='farm',sel=null,busy=0,pend=null,LOG=[],POS={},AC;
+const $=s=>document.querySelector(s),sleep=ms=>new Promise(r=>setTimeout(r,ms)),fmt=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?(n/1e3).toFixed(1)+'k':Math.floor(n),rnd=(a,b)=>a+Math.random()*(b-a);
+function toast(m){const t=$('#toast');t.textContent=m;t.className='on';clearTimeout(toast.t);toast.t=setTimeout(()=>t.className='',2600)}
+function beep(f,d=.12,t='sine',v=.07,f2){try{AC=AC||new AudioContext();const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;if(f2)o.frequency.linearRampToValueAtTime(f2,AC.currentTime+d);g.gain.value=v;o.connect(g);g.connect(AC.destination);o.start();g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+d);o.stop(AC.currentTime+d)}catch{}}
+const baa=()=>beep(330,.4,'sawtooth',.05,260);
+async function api(p,b){const r=await fetch('/api/'+p,{method:'POST',headers:{'content-type':'application/json','x-token':T||''},body:JSON.stringify(b||{})});if(r.status==401){localStorage.removeItem('tok');T=null;login();throw 0}return r.json()}
+async function act(a,b){const r=await api('act/'+a,b);if(r.d){D=r.d;D.at=Date.now()}if(r.err)toast(r.err);return r}
+function confetti(n=50){for(let i=0;i<n;i++){const c=document.createElement('div');c.className='cf';c.style.left=rnd(0,100)+'vw';c.style.background=`hsl(${rnd(0,360)},90%,60%)`;c.style.animationDelay=rnd(0,.8)+'s';document.body.appendChild(c);setTimeout(()=>c.remove(),3500)}}
+// ---------- art ----------
+function sv(g,w=120){const R=G.RAR[g.r],id='g'+Math.random().toString(36).slice(2,6),sat=25+g.r*13,li=95-g.r*4,wc=`hsl(${g.hue},${sat}%,${li}%)`,ws=`hsl(${g.hue},${sat+15}%,${li-32}%)`,fc=`hsl(${(g.hue+40)%360},25%,${22+g.r*3}%)`,has=x=>g.ex.includes(x);
+let s=`<svg viewBox="-10 -30 150 160" width="${w}" height="${w*1.07}" style="overflow:visible">`;
+if(has('galaxy'))s+=`<defs><radialGradient id="${id}"><stop offset="0" stop-color="#7a5cff" stop-opacity=".8"/><stop offset="1" stop-color="#7a5cff" stop-opacity="0"/></radialGradient></defs><circle cx="60" cy="50" r="78" fill="url(#${id})"/>`;else if(g.r>=4)s+=`<circle cx="60" cy="50" r="68" fill="${R.c}" opacity=".22"/>`;
+if(has('wings'))s+=`<ellipse cx="40" cy="42" rx="10" ry="26" fill="#fff" stroke="#9cf" stroke-width="2" transform="rotate(-35 40 42)"/><ellipse cx="76" cy="42" rx="10" ry="26" fill="#fff" stroke="#9cf" stroke-width="2" transform="rotate(35 76 42)"/>`;
+if(has('tentacles'))s+=`<path d="M45 90 q-8 14 0 22 t0 14M60 92 q8 14 0 22 t0 14M75 90 q-8 14 0 22 t0 14" stroke="${fc}" stroke-width="5" fill="none" stroke-linecap="round"/>`;
+else for(const x of[38,52,72,86])s+=`<rect x="${x-3}" y="72" width="7" height="24" rx="3" fill="${fc}"/>`;
+if(has('flame'))s+=`<path d="M44 38 Q46 14 54 28 Q60 4 66 28 Q76 16 76 38Z" fill="#ff7a1a"/><path d="M52 36 Q58 18 66 36Z" fill="#ffd34d"/>`;
+const pf=`fill="${wc}" stroke="${ws}" stroke-width="3"`;
+if(g.wool==2){const p=[];for(let k=0;k<16;k++){const a=k*Math.PI/8,r=k%2?30:43;p.push((58+r*Math.cos(a)).toFixed(0)+','+(56+r*.72*Math.sin(a)).toFixed(0))}s+=`<polygon points="${p.join(' ')}" ${pf} stroke-linejoin="round"/>`}
+else if(g.wool==3)s+=`<circle cx="58" cy="56" r="36" ${pf}/>`;
+else{const n=g.wool==1?12:8,rr=g.wool==1?11:16;for(let k=0;k<n;k++){const a=k*2*Math.PI/n;s+=`<circle cx="${58+36*Math.cos(a)}" cy="${56+25*Math.sin(a)}" r="${rr}" ${pf}/>`}s+=`<ellipse cx="58" cy="56" rx="36" ry="26" fill="${wc}"/>`;
+ if(g.wool==4)s+=`<path d="M40 34V78M58 30V82M76 34V78" stroke="${ws}" stroke-width="5" opacity=".35"/>`;if(g.wool==5)s+=`<circle cx="58" cy="26" r="10" ${pf}/>`}
+if(has('bell'))s+=`<circle cx="84" cy="76" r="5" fill="#ffd34d" stroke="#a80" stroke-width="1.5"/>`;
+const hs=[1,.8,.62][g.heads-1],ys=[[56],[44,68],[34,56,78]][g.heads-1];
+ys.forEach(y=>{s+=`<g transform="translate(100 ${y}) scale(${hs})">`;
+ if(has('horns'))s+=`<path d="M-6 -10 Q-16 -26 -4 -28M10 -10 Q20 -26 8 -28" fill="none" stroke="#c9a46a" stroke-width="4" stroke-linecap="round"/>`;
+ s+=`<ellipse cx="-9" cy="-9" rx="6" ry="9" fill="${fc}" transform="rotate(-30 -9 -9)"/><ellipse rx="16" ry="14" fill="${fc}"/><circle cx="-3" cy="-4" r="4.5" fill="#fff"/><circle cx="9" cy="-4" r="4.5" fill="#fff"/><circle cx="-2" cy="-4" r="2" fill="#111"/><circle cx="10" cy="-4" r="2" fill="#111"/>`;
+ s+=['<path d="M-2 6Q4 12 10 6" stroke="#fff" fill="none" stroke-width="2"/>','<circle cx="4" cy="8" r="3" fill="#a33"/>','<path d="M-2 6Q4 12 10 6" stroke="#fff" fill="none" stroke-width="2"/><circle cx="4" cy="11" r="3" fill="#f66"/>','<path d="M-2 10Q4 4 10 10" stroke="#fff" fill="none" stroke-width="2"/>'][g.face];
+ if(has('glasses'))s+=`<circle cx="-3" cy="-4" r="6" fill="none" stroke="#111" stroke-width="1.5"/><circle cx="9" cy="-4" r="6" fill="none" stroke="#111" stroke-width="1.5"/>`;
+ if(has('eye'))s+=`<circle cx="3" cy="-12" r="4" fill="#fff" stroke="#a649ff" stroke-width="1.5"/><circle cx="3" cy="-12" r="1.8" fill="#a649ff"/>`;
+ if(has('flower'))s+=`<circle cx="-8" cy="-16" r="5" fill="#ff7ab6"/><circle cx="-8" cy="-16" r="2" fill="#ffd34d"/>`;
+ if(has('halo'))s+=`<ellipse cx="3" cy="-24" rx="12" ry="4" fill="none" stroke="#ffd700" stroke-width="3"/>`;
+ if(has('crown'))s+=`<polygon points="-8,-12 -8,-26 -3,-19 3,-28 9,-19 14,-26 14,-12" fill="#ffd34d" stroke="#a80" stroke-width="1.5"/>`;
+ if(has('hat'))s+=`<rect x="-8" y="-34" width="22" height="22" fill="#222"/><rect x="-14" y="-14" width="34" height="5" rx="2" fill="#222"/><rect x="-8" y="-20" width="22" height="4" fill="#c33"/>`;
+ s+='</g>'});
+if(has('orb'))s+=`<circle class="fl2" cx="58" cy="-14" r="9" fill="${R.c}" opacity=".85"/>`;
+if(has('stars'))s+=`<text x="14" y="-6" fill="#ffd34d" font-size="16">✦</text><text x="104" y="-14" fill="#ffd34d" font-size="14">✦</text><text x="56" y="-22" fill="#ffd34d" font-size="12">✦</text>`;
+return s+'</svg>'}
+function egg(t,w){const f=['#fff4dc','#fff4dc','url(#gg)','#2b1b5e'][t];let x=`<svg viewBox="0 0 80 100" width="${w}" height="${w*1.25}"><defs><linearGradient id="gg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff2a0"/><stop offset=".5" stop-color="#ffc400"/><stop offset="1" stop-color="#c98a00"/></linearGradient></defs><path d="M40 4C62 4 74 44 74 66C74 86 58 96 40 96C22 96 6 86 6 66C6 44 18 4 40 4Z" fill="${f}" stroke="${t==3?'#a649ff':'#7a5a30'}" stroke-width="3"/>`;
+if(t==1)for(const[a,b]of[[28,40],[50,30],[44,58],[26,70],[58,74],[38,84],[60,50]])x+=`<circle cx="${a}" cy="${b}" r="3" fill="#b8793a"/>`;
+if(t==2)x+=`<path d="M20 34Q26 18 36 12" stroke="#fff" stroke-width="4" fill="none" opacity=".7"/>`;
+if(t==3){for(const[a,b]of[[28,30],[50,22],[44,52],[22,66],[56,70],[38,82]])x+=`<circle cx="${a}" cy="${b}" r="2" fill="#fff"/>`;x+=`<ellipse cx="40" cy="55" rx="30" ry="8" fill="none" stroke="#c9b3ff" stroke-width="1.5" transform="rotate(-20 40 55)"/>`}
+return x+'</svg>'}
+const chip=s=>`<span class="badge" style="background:${G.RAR[s.r].c}">${G.RAR[s.r].n}</span>`;
+// ---------- login ----------
+function login(){$('#top').innerHTML='<span class="logo">🥚 EGG &amp; WOOL 🐑</span>';$('#nav').innerHTML='';$('#app').innerHTML=`<div class="card" style="max-width:380px;margin:30px auto"><h2>Welcome to the farm!</h2><input id="un" placeholder="Farmer name" maxlength="16"><input id="pw" type="password" placeholder="Password"><button onclick="auth('login')">Log in</button> <button onclick="auth('register')" style="background:#4aa84a;box-shadow:0 3px 0 #276">New farm</button></div>`}
+async function auth(p){const r=await fetch('/api/'+p,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:$('#un').value,pass:$('#pw').value})}).then(r=>r.json());if(r.err)return toast(r.err);T=r.token;localStorage.tok=T;await act('state');start()}
+function logout(){localStorage.removeItem('tok');T=null;D=null;login()}
+// ---------- main ----------
+const V={};
+function start(){render()}
+function render(){if(!D)return;$('#top').innerHTML=`<span class="logo">🥚 EGG &amp; WOOL 🐑</span><span>🪙 <span id="tc">${fmt(D.coins)}</span></span><span>🧶 <span id="tw"></span></span><span>🏆 ${D.rating}</span><span>👤 ${D.name} <a href="#" style="color:#ffd34d" onclick="logout();return false">log out</a></span>`;
+$('#nav').innerHTML=[['farm','🏡 Farm'],['hatch','🥚 Hatchery'],['flock','🐑 Flock'],['battle','⚔️ Battle'],['board','🏆 Leaderboard']].map(t=>`<button class="${tab==t[0]?'on':''}" onclick="go('${t[0]}')">${t[1]}</button>`).join('');
+$('#app').innerHTML=V[tab]();if(tab=='farm')buildScene();if(tab=='battle'&&BV)setTimeout(()=>{const l=$('#log');if(l)l.innerHTML=LOG.join('<br>'),l.scrollTop=1e5},0)}
+function go(t){tab=t;pend=null;if(t=='board')return board();render()}
+setInterval(()=>{if(!D)return;const w=Math.min(D.calc.cap,D.wool+D.calc.rate*(Date.now()-D.at)/1000);const a=$('#tw');if(a)a.textContent=fmt(w);const t=$('#wtxt');if(t){t.innerHTML=`${fmt(w)} / ${fmt(D.calc.cap)} wool · +${D.calc.rate.toFixed(1)}/s · worth 🪙${fmt(w*D.calc.price)}`;$('#wbar').style.width=100*w/D.calc.cap+'%'}},250);
+setInterval(()=>{if(!D)return;act('state')},60000);
+// farm
+const SCENE=()=>`<svg viewBox="0 0 800 300" preserveAspectRatio="none"><circle cx="720" cy="50" r="30" fill="#ffe14d"/><g class="cloud"><ellipse cx="150" cy="50" rx="50" ry="16" fill="#fff"/><ellipse cx="180" cy="40" rx="30" ry="14" fill="#fff"/></g><g class="cloud"><ellipse cx="480" cy="80" rx="46" ry="14" fill="#fff"/><ellipse cx="505" cy="70" rx="28" ry="12" fill="#fff"/></g><path d="M0 170Q200 120 400 160T800 150V300H0Z" fill="#6cc24d"/><rect x="40" y="90" width="110" height="80" fill="#c0392b"/><polygon points="30,92 95,48 160,92" fill="#8e2a20"/><rect x="75" y="120" width="40" height="50" fill="#f3d9a8"/><path d="M75 120L115 170M115 120L75 170" stroke="#8e2a20" stroke-width="4"/>${D.b.shed?'<rect x="190" y="120" width="70" height="50" fill="#d9a66b"/><polygon points="184,122 225,92 266,122" fill="#8a5a2b"/>':''}${D.b.market?'<rect x="620" y="120" width="90" height="12" fill="#e74c3c"/><rect x="624" y="132" width="5" height="40" fill="#8a5a2b"/><rect x="702" y="132" width="5" height="40" fill="#8a5a2b"/><rect x="630" y="150" width="70" height="8" fill="#f3d9a8"/>':''}${D.b.auto?'<rect x="320" y="110" width="30" height="60" fill="#bbb"/><circle cx="335" cy="104" r="15" fill="#999"/>':''}<g stroke="#a0722f" stroke-width="5"><path d="M0 255H800M0 235H800"/>${Array.from({length:21},(_,i)=>`<path d="M${i*40+10} 225V268"/>`).join('')}</g><rect x="740" y="90" width="12" height="60" fill="#7a4a21"/><circle cx="746" cy="80" r="34" fill="#3f9d3f"/></svg>`;
+function buildScene(){const sc=$('#scene');if(!sc)return;D.sheep.slice(0,24).forEach(s=>{const p=POS[s.id]=POS[s.id]||{x:rnd(5,85),y:rnd(50,78)},d=document.createElement('div');d.className='ws';d.dataset.id=s.id;d.style.left=p.x+'%';d.style.top=p.y+'%';d.innerHTML=`<div>${sv(s,66)}</div>`;d.onclick=()=>{d.classList.add('j');setTimeout(()=>d.classList.remove('j'),400);say(d,'Baa!');baa()};sc.appendChild(d)})}
+function say(el,t){const b=document.createElement('span');b.className='bub';b.textContent=t;el.appendChild(b);setTimeout(()=>b.remove(),1800)}
+setInterval(()=>{const l=[...document.querySelectorAll('.ws')];if(!l.length)return;for(let i=0;i<2;i++){const e=l[Math.floor(Math.random()*l.length)],p=POS[e.dataset.id],nx=rnd(3,88);e.firstChild.style.transform=nx<p.x?'scaleX(-1)':'';p.x=nx;p.y=rnd(48,80);e.style.left=p.x+'%';e.style.top=p.y+'%'}},2600);
+setInterval(()=>{const l=[...document.querySelectorAll('.ws')];if(l.length)say(l[Math.floor(Math.random()*l.length)],['Baa!','💤','🌼','Meh.','Baaaa!','👀','Who moved my hill?','🥕?','I am a cloud','Zoomies!'][Math.floor(Math.random()*10)])},3200);
+V.farm=()=>`<div id="scene">${SCENE()}</div><div class="row"><div class="card"><b>🧶 Wool barn</b><div class="bar"><i id="wbar"></i></div><div id="wtxt"></div><br><button onclick="sell()">Sell all wool</button><p style="font-size:12px">Sheep: ${D.sheep.length}/${D.calc.slots}. Wool piles up even while you're away (up to barn capacity).</p></div><div class="card"><b>🔨 Buildings</b>${G.B.map(b=>{const l=D.b[b[0]],mx=b[0]=='auto'?5:10,c=G.bcost(b,l);return`<div class="bl"><span><b>${b[1]}</b> Lv${l} — ${b[2]}</span><button ${l>=mx||D.coins<c?'disabled':''} onclick="up('${b[0]}')">${l>=mx?'MAX':'🪙'+fmt(c)}</button></div>`}).join('')}</div></div><div class="card"><b>🏅 Trophies</b> ${G.ACH.map(a=>`<span class="badge" style="background:${D.ach.includes(a[0])?'#3fae4a':'#aaa'};margin:2px">${D.ach.includes(a[0])?'✓ ':''}${a[1]} +${a[3]}</span>`).join(' ')}</div>`;
+async function sell(){const r=await act('sell');if(r.gain!=null){beep(880,.1);beep(1100,.15);toast('+'+r.gain+' coins!')}render()}
+async function up(b){const r=await act('upgrade',{b});if(!r.err)beep(520,.2,'triangle');POS={};render()}
+// hatchery
+V.hatch=()=>`<div class="card">Pasture: <b>${D.sheep.length}/${D.calc.slots}</b> sheep. Higher egg tiers make rarer sheep much more likely.</div><div class="eggs">${G.EGG.map((e,i)=>{const w=G.RAR.map((r,k)=>r.w*e.b[k]),t=w.reduce((a,b)=>a+b);return`<div class="card">${egg(i,90)}<h3>${e.n}</h3><div class="odds">${G.RAR.map((r,k)=>w[k]?`<span style="color:${r.c}">${r.n} ${(100*w[k]/t).toFixed(w[k]/t<.01?2:w[k]/t<.1?1:0)}%</span>`:'').filter(x=>x).join(' · ')}</div><br><button ${D.coins<e.cost?'disabled':''} onclick="hatch(${i})">Hatch 🪙${fmt(e.cost)}</button></div>`}).join('')}</div>`;
+async function hatch(e){if(busy)return;busy=1;const r=await act('hatch',{egg:e});if(r.err){busy=0;return}const s=r.sheep,R=G.RAR[s.r],ov=$('#ov');ov.className='on';
+ov.innerHTML=`<div class="shake" id="eg">${egg(e,150)}</div><h2 id="hm">Something is stirring…</h2>`;beep(200,.2,'square',.05);
+for(let i=0;i<3+s.r;i++){await sleep(450);beep(220+i*50,.1,'square',.04);if(i==2){$('#eg').style.filter=`drop-shadow(0 0 ${12+s.r*6}px ${R.c})`;$('#hm').textContent=s.r>=3?'Whoa… this one feels SPECIAL…':'Crack! Crack!'}}
+await sleep(500);beep(700,.1);beep(900,.15);if(s.r>=2)beep(1200,.4,'triangle');if(s.r>=4)beep(1600,.6,'sine',.09);
+const st=G.stats(s),tr=G.TR.find(t=>t.id==s.trait);
+ov.innerHTML=`<div class="reveal" style="background:#fffaf0;color:#3a2f25;border:6px solid ${R.c};border-radius:22px;padding:18px;box-shadow:0 0 ${20+s.r*20}px ${R.c}">${chip(s)}<h2 style="margin:4px">${s.name}</h2>${sv(s,220)}<p><b>${G.ROLES[s.role].n}</b> · <span style="color:${G.ELC[s.el]}">●</span> ${G.EL[s.el]} · ${s.heads>1?s.heads+' heads · ':''}${tr.n} (${tr.d})<br>Wool: ${(G.sheepRate(s)).toFixed(1)}/s · HP ${st.hp} ATK ${st.atk} DEF ${st.def} SPD ${st.spd}</p><button onclick="closeOv()">Nice!</button></div>`;
+if(s.r>=2)confetti(30+s.r*25);busy=0;render()}
+function closeOv(){$('#ov').className='';$('#ov').innerHTML='';render()}
+// flock
+const card=s=>{const st=G.stats(s),tr=G.TR.find(t=>t.id==s.trait),R=G.RAR[s.r];return`<div class="sc ${sel==s.id?'sel':''}" style="border-color:${R.c}" onclick="sel='${s.id}';render()">${sv(s,100)}<b>${s.name}</b>${chip(s)} Lv${s.lv}<br>${G.ROLES[s.role].n} · <span style="color:${G.ELC[s.el]}">●</span>${G.EL[s.el]}<br>${tr.n}<br>HP${st.hp} ATK${st.atk} DEF${st.def} SPD${st.spd}<br>🧶 ${G.sheepRate(s).toFixed(1)}/s<br><button style="padding:2px 8px;font-size:11px;background:#c55;box-shadow:none" onclick="event.stopPropagation();rel('${s.id}','${s.name}',${R.v})">Release +${R.v}</button></div>`};
+V.flock=()=>`<div class="card"><b>Battle team</b> — tap a sheep below, then a slot to swap it in<div class="slots">${D.team.map((id,i)=>{const s=D.sheep.find(x=>x.id==id);return`<div class="slot" onclick="slot(${i})">${sv(s,80)}<br><small>${s.name}</small></div>`}).join('')}</div></div><div class="grid">${D.sheep.slice().sort((a,b)=>b.r-a.r||b.lv-a.lv).map(card).join('')}</div>`;
+async function slot(i){if(!sel)return toast('Tap a sheep first');const ids=D.team.slice(),j=ids.indexOf(sel);if(j>=0)[ids[i],ids[j]]=[ids[j],ids[i]];else ids[i]=sel;await act('team',{ids});sel=null;render()}
+async function rel(id,n,v){if(confirm(`Release ${n} for ${v} coins?`)){await act('release',{id});sel=null;render()}}
+// battle
+V.battle=()=>BV?arena():`<div class="card"><h3>Battle Barn</h3><p>Rating <b>${D.rating}</b> · ${D.wins} wins / ${D.losses} losses. You'll face another player's saved team (or Farmer Bot if nobody is close). Elements: Fluff beats Mud beats Spark beats Fluff. Cosmic is neutral.</p><div class="slots">${D.team.map(id=>{const s=D.sheep.find(x=>x.id==id);return`<div class="slot" style="cursor:default">${sv(s,70)}<br><small>${s.name}<br>${G.ROLES[s.role].n}</small></div>`}).join('')}</div><br><button onclick="bstart()">⚔️ Find a match</button></div>`;
+function arena(){const row=(a,b)=>BV.u.slice(a,b).map((u,k)=>{const i=a+k;return`<div class="u ${u.hp<=0?'ko':''} ${BV.cur==i?'cur':''}" id="u${i}" onclick="tgt(${i})"><div style="${u.side?'transform:scaleX(-1)':''}">${sv(u.g,90)}</div><div class="hp"><i id="hb${i}" style="width:${100*u.hp/u.max}%"></i></div><small id="ht${i}">${u.name} ${u.hp}/${u.max}${u.sh?' 🛡'+u.sh:''}${u.stun?' 💫':''}</small><small>${G.ROLES[u.role].n} · <span style="color:${G.ELC[u.el]}">●</span>${G.EL[u.el]}</small></div>`}).join('');
+let a='Enemy is thinking…';if(BV.done)a=`<h3>${BV.win?'🏆 Victory!':'💥 Defeat…'}</h3>+${BV.reward.coins} coins, ${BV.reward.rating>0?'+':''}${BV.reward.rating} rating ${BV.win?'· your team gained XP!':''}<br><button onclick="BV=null;LOG=[];render()">Continue</button>`;else if(BV.cur!=null){const u=BV.u[BV.cur],mv=G.ROLES[u.role].mv;a=`<b>${u.name}'s turn:</b> ${mv.map((m,i)=>`<button ${i&&u.cd>0?'disabled':''} onclick="mv(${i})">${m[0]}${i&&u.cd>0?' ('+u.cd+')':''}</button>`).join(' ')}`}
+return`<div class="card">vs <b>${BV.oname}</b></div><div id="arena"><div class="arow">${row(3,6)}</div><div class="arow">${row(0,3)}</div></div><div class="card" id="act">${a}</div><div class="card log" id="log"></div>`}
+async function bstart(){if(busy)return;const r=await act('bstart');if(!r.bt)return;LOG=[];BV={...r.bt,u:r.bt.u.map(u=>({...u,hp:u.max,sh:0,stun:0,cd:0})),cur:null,done:false};render();await play(r.bt)}
+function mv(i){if(busy)return;const u=BV.u[BV.cur],m=G.ROLES[u.role].mv[i];if(m[1]=='all'||m[1]=='shield')return go(i,0);pend=i;document.querySelectorAll('.u').forEach((e,k)=>{const x=BV.u[k];if(x.hp>0&&x.side==(m[1]=='heal'?0:1))e.classList.add('tg')});toast(m[1]=='heal'?'Pick a friend to heal':'Pick a target')}
+function tgt(i){if(pend==null||busy)return;const u=BV.u[BV.cur],m=G.ROLES[u.role].mv[pend];if(BV.u[i].hp<=0||BV.u[i].side!=(m[1]=='heal'?0:1))return;go(pend,i)}
+async function go(mi,t){pend=null;const r=await act('bact',{mi,t});if(r.bt)await play(r.bt)}
+async function play(bt){busy=1;for(const e of bt.ev){LOG.push(e.m);const l=$('#log');if(l)l.innerHTML=LOG.join('<br>'),l.scrollTop=1e5;const a=$('#u'+e.a);if(a){a.classList.add('lunge');beep(e.k=='h'?660:e.k=='s'?500:170,.12,'square')}
+ for(const t of e.to){const el=$('#u'+t);if(!el)continue;if(e.k=='d'){el.classList.add('hit');fx(el,'-'+e.v,'#d22')}if(e.k=='h')fx(el,'+'+e.v,'#1a1')}
+ e.hp.forEach((h,i)=>{const u=BV.u[i],b=$('#hb'+i),t=$('#ht'+i);if(b)b.style.width=100*h/u.max+'%';if(t)t.textContent=`${u.name} ${h}/${u.max}${e.sh[i]?' 🛡'+e.sh[i]:''}`;if(h<=0&&$('#u'+i))$('#u'+i).classList.add('ko')});
+ await sleep(800);document.querySelectorAll('.u').forEach(x=>x.classList.remove('lunge','hit'))}
+ BV=bt;busy=0;render();if(bt.done){beep(bt.win?880:150,.4,'triangle');if(bt.win)confetti(60)}}
+function fx(el,t,c){const s=document.createElement('span');s.className='fx';s.textContent=t;s.style.color=c;el.appendChild(s);setTimeout(()=>s.remove(),1000)}
+// leaderboard
+async function board(){const b=await fetch('/api/board').then(r=>r.json());tab='board';render();$('#app').innerHTML=`<div class="card"><h3>🏆 Top Farmers</h3><table><tr><th>#</th><th>Farmer</th><th>Rating</th><th>Wins</th><th>Sheep</th><th>Best</th><th></th></tr>${b.map((x,i)=>`<tr><td>${i+1}</td><td>${x.name}</td><td>${x.rating}</td><td>${x.wins}</td><td>${x.sheep}</td><td style="color:${G.RAR[x.best].c}">${G.RAR[x.best].n}</td><td><button style="padding:3px 10px" onclick="visit('${x.name}')">Visit</button></td></tr>`).join('')}</table></div>`}
+async function visit(n){const f=await fetch('/api/farm/'+n).then(r=>r.json());$('#ov').className='on';$('#ov').innerHTML=`<h2>${f.name}'s flock</h2><div class="grid" style="width:100%;max-width:900px;color:#3a2f25">${f.sheep.map(s=>card(s).replace(/onclick="[^"]*"/g,'').replace(/<button.*?<\/button>/,'')).join('')}</div><br><button onclick="closeOv()">Close</button>`}
+if(T)act('state').then(r=>r.d?start():login()).catch(()=>{});else login();
+</script></body></html>
