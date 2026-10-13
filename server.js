@@ -46,39 +46,66 @@ A.release=async(d,b)=>{const i=d.sheep.findIndex(s=>s.id==b.id);if(i<0)return{er
  const[s]=d.sheep.splice(i,1);d.coins+=G.RAR[s.r].v;d.team=d.team.filter(x=>x!=s.id);tick(d);return{}};
 // ---- battles ----
 const BT=new Map();
-const unit=(s,side)=>{const st=G.stats(s);return{side,name:s.name,role:s.role,el:s.el,g:s,hp:st.hp,max:st.hp,atk:st.atk,def:st.def,spd:st.spd,cd:0,sh:0,stun:0,trait:s.trait}};
+const unit=(s,side)=>{const st=G.stats(s);return{side,name:s.name,role:s.role,el:s.el,g:s,hp:st.hp,max:st.hp,atk:st.atk,def:st.def,spd:st.spd,cds:[0,0,0,0],sh:0,stun:0,trait:s.trait}};
 const elm=(a,b)=>a==3||b==3?1:b==(a+1)%3?1.5:a==(b+1)%3?.67:1;
 const E=(b,m,a,to,v,k)=>b.ev.push({m,a,to:to||[],v,k,hp:b.u.map(x=>x.hp),sh:b.u.map(x=>x.sh)});
 function hit(u,x,mult){const e=elm(u.el,x.el),crit=u.trait=='lucky'&&Math.random()<.2;
  const v=Math.max(1,Math.round(u.atk*mult*e*(crit?1.5:1)*(.9+Math.random()*.2)*100/(100+x.def)));const a=Math.min(x.sh,v);x.sh-=a;x.hp=Math.max(0,x.hp-(v-a));return{v,crit,e}}
 const eff=r=>(r.crit?' CRIT!':'')+(r.e>1?' Super effective!':r.e<1?' Not very effective.':'');
-function exec(b,i,mi,t){const u=b.u[i],m=G.ROLES[u.role].mv[mi],foes=b.u.filter(x=>x.side!=u.side&&x.hp>0),fr=b.u.filter(x=>x.side==u.side&&x.hp>0),tg=b.u[t];
- if(m[3])u.cd=m[3];
- if(m[1]=='dmg'||m[1]=='stun'){const x=tg&&tg.hp>0&&tg.side!=u.side?tg:foes[0],r=hit(u,x,m[2]);if(m[1]=='stun')x.stun=1;
-  E(b,`${u.name} uses ${m[0]} on ${x.name} for ${r.v}.${eff(r)}${m[1]=='stun'?' '+x.name+' is dizzy!':''}`,i,[b.u.indexOf(x)],r.v,'d')}
- else if(m[1]=='all'){const to=[];let tot=0;foes.forEach(x=>{const r=hit(u,x,m[2]);tot+=r.v;to.push(b.u.indexOf(x))});E(b,`${u.name} STAMPEDES through the whole team!`,i,to,Math.round(tot/to.length),'d')}
- else if(m[1]=='heal'){const x=tg&&tg.hp>0&&tg.side==u.side?tg:fr.sort((a,c)=>a.hp/a.max-c.hp/c.max)[0],v=Math.round(u.atk*m[2]);x.hp=Math.min(x.max,x.hp+v);E(b,`${u.name} hugs ${x.name} (+${v} HP)`,i,[b.u.indexOf(x)],v,'h')}
- else{fr.forEach(x=>x.sh+=Math.round(x.max*m[2]));E(b,`${u.name} raises a Fluff Wall for the team!`,i,fr.map(x=>b.u.indexOf(x)),0,'s')}}
-function ai(b,i){const u=b.u[i],foes=b.u.filter(x=>x.side==0&&x.hp>0),fr=b.u.filter(x=>x.side==1&&x.hp>0),mi=u.cd==0&&Math.random()<.65?1:0;let t;
- if(mi==1&&u.role==2)t=fr.sort((a,c)=>a.hp/a.max-c.hp/c.max)[0];else{foes.sort((a,c)=>a.hp-c.hp);t=Math.random()<.6?foes[0]:pick(foes)}exec(b,i,mi,b.u.indexOf(t))}
+function exec(b,i,mi,t){const u=b.u[i],m=G.ROLES[u.role].mv[mi],foes=b.u.filter(x=>x.side!=u.side&&x.hp>0),fr=b.u.filter(x=>x.side==u.side&&x.hp>0),tg=b.u[t],ix=x=>b.u.indexOf(x),ty=m[1];
+ if(m[3])u.cds[mi]=m[3];
+ if(ty=='dmg'||ty=='stun'||ty=='drain'){const x=tg&&tg.hp>0&&tg.side!=u.side?tg:foes[0],r=hit(u,x,m[2]);if(ty=='stun')x.stun=1;let ex='';
+  if(ty=='drain'){const h=Math.round(r.v*.5);u.hp=Math.min(u.max,u.hp+h);ex=` and drains ${h} HP`}
+  E(b,`${u.name} uses ${m[0]} on ${x.name} for ${r.v}${ex}.${eff(r)}${ty=='stun'?' '+x.name+' is dizzy!':''}`,i,[ix(x)],r.v,'d')}
+ else if(ty=='all'||ty=='stunall'){let v=0;foes.forEach(x=>{v=hit(u,x,m[2]).v;if(ty=='stunall')x.stun=1});E(b,`${u.name} unleashes ${m[0]}!${ty=='stunall'?' Everyone is dizzy!':''}`,i,foes.map(ix),v,'d')}
+ else if(ty=='heal'){const x=tg&&tg.hp>0&&tg.side==u.side?tg:fr.sort((a,c)=>a.hp/a.max-c.hp/c.max)[0],v=Math.round(u.atk*m[2]);x.hp=Math.min(x.max,x.hp+v);E(b,`${u.name} hugs ${x.name} (+${v} HP)`,i,[ix(x)],v,'h')}
+ else if(ty=='healall'){const v=Math.round(u.atk*m[2]);fr.forEach(x=>x.hp=Math.min(x.max,x.hp+v));E(b,`${u.name} sings ${m[0]} (+${v} HP each)`,i,fr.map(ix),v,'h')}
+ else{fr.forEach(x=>x.sh+=Math.round(x.max*m[2]));E(b,`${u.name} raises ${m[0]}!`,i,fr.map(ix),0,'s')}}
+function ai(b,i){const u=b.u[i],mv=G.ROLES[u.role].mv,foes=b.u.filter(x=>x.side!=u.side&&x.hp>0),fr=b.u.filter(x=>x.side==u.side&&x.hp>0),ok=[];
+ for(let k=1;k<2+(u.g.evo|0);k++)if(u.cds[k]==0)ok.push(k);const mi=ok.length&&Math.random()<.65?pick(ok):0;let t;
+ if(mv[mi][1]=='heal')t=fr.sort((a,c)=>a.hp/a.max-c.hp/c.max)[0];else{foes.sort((a,c)=>a.hp-c.hp);t=Math.random()<.6?foes[0]:pick(foes)}exec(b,i,mi,b.u.indexOf(t))}
 function advance(b){for(let g=0;g<300;g++){const al=n=>b.u.filter(u=>u.hp>0&&u.side==n).length;
- if(!al(0)||!al(1)){b.done=true;b.win=!!al(0);b.cur=null;return}
- if(!b.q.length)b.q=b.u.map((u,i)=>i).filter(i=>b.u[i].hp>0).sort((x,y)=>b.u[y].spd-b.u[x].spd);
- const i=b.q.shift(),u=b.u[i];if(u.hp<=0)continue;if(u.cd>0)u.cd--;
+ if(!al(0)||!al(1)){b.done=true;b.win=al(0)?true:al(1)?false:Math.random()<.5;b.cur=null;return}
+ if(!b.q.length){b.q=b.u.map((u,i)=>i).filter(i=>b.u[i].hp>0).sort((x,y)=>b.u[y].spd-b.u[x].spd);b.round=(b.round|0)+1;
+  if(b.round>12){b.u.forEach(x=>{if(x.hp>0)x.hp=Math.max(0,x.hp-Math.ceil(x.max*.05*(b.round-12)))});E(b,'⛈ A storm rolls in and soaks everyone!',null,b.u.map((x,i)=>i),0,'d');continue}}
+ const i=b.q.shift(),u=b.u[i];if(u.hp<=0)continue;for(let k=0;k<4;k++)if(u.cds[k]>0)u.cds[k]--;
  if(u.stun){u.stun=0;E(b,`${u.name} is too dizzy to move!`,i,[],0,'x');continue}
- if(u.side==0){b.cur=i;return}ai(b,i)}}
-const bv=b=>{const ev=b.ev;b.ev=[];return{u:b.u.map(({name,role,el,g,hp,max,cd,sh,stun,side})=>({name,role,el,g,hp,max,cd,sh,stun,side})),cur:b.cur,done:b.done,win:b.win,oname:b.oname,reward:b.reward,ev}};
+ if(b.pvp||u.side==0){b.cur=i;b.turnAt=Date.now();return}ai(b,i)}}
+const vu=b=>b.u.map(({name,role,el,g,hp,max,cds,sh,stun,side})=>({name,role,el,g,hp,max,cds,sh,stun,side}));
+const bv=b=>{const ev=b.ev;b.ev=[];return{u:vu(b),cur:b.cur,done:b.done,win:b.win,oname:b.oname,reward:b.reward,ev}};
+const gain=(s,x)=>{if(s&&s.lv<20){s.xp+=x;s.lv=Math.min(20,1+Math.floor(s.xp/1.5))}};
 function finish(d,b){if(b.paid)return;b.paid=1;
- if(b.win){const pw=b.u.filter(x=>x.side==1).reduce((a,x)=>a+x.max+x.atk*4,0),c=Math.round(40+pw/6);d.wins++;d.rating+=20;d.coins+=c;b.reward={coins:c,rating:20};
-  d.team.forEach(id=>{const s=d.sheep.find(x=>x.id==id);if(s&&s.lv<20){s.xp++;s.lv=Math.min(20,1+Math.floor(s.xp/2))}})}
- else{d.losses++;d.rating=Math.max(0,d.rating-12);d.coins+=15;b.reward={coins:15,rating:-12}}}
+ if(b.win){const pw=b.u.filter(x=>x.side==1).reduce((a,x)=>a+x.max+x.atk*4,0),c=Math.round(40+pw/6);d.wins++;d.rating+=20;d.coins+=c;b.reward={coins:c,rating:20};d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),1))}
+ else{d.losses++;d.rating=Math.max(0,d.rating-12);d.coins+=15;b.reward={coins:15,rating:-12};d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),.5))}}
+A.evolve=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};const e=s.evo|0;if(e>=2)return{err:'Already fully evolved'};if(s.lv<G.evoLv[e])return{err:'Needs level '+G.evoLv[e]};
+ const c=G.evoCost(s);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;s.evo=e+1;return{sheep:s}};
 A.bstart=async(d,_,q)=>{const all=(await db.all()).filter(x=>x.name!=q.n&&x.data.team&&x.data.team.length==3).sort((a,c)=>Math.abs(a.data.rating-d.rating)-Math.abs(c.data.rating-d.rating)).slice(0,4);
  let opp,oname;if(all.length&&Math.random()<.85){const o=pick(all);oname=o.data.name;opp=o.data.team.map(id=>o.data.sheep.find(s=>s.id==id)).filter(Boolean)}
- if(!opp||opp.length<3){oname='Farmer Bot';const e=d.rating<1100?0:d.rating<1300?1:2;opp=[0,1,2].map(()=>{const s=G.roll(e);s.lv=Math.max(1,Math.min(20,1+Math.floor((d.rating-1000)/60)));return s})}
+ if(!opp||opp.length<3){oname='Farmer Bot';const e=d.rating<1100?0:d.rating<1300?1:2;opp=[0,1,2].map(()=>{const s=G.roll(e);s.lv=Math.max(1,Math.min(20,1+Math.floor((d.rating-1000)/60)));s.evo=s.lv>=12?2:s.lv>=5?1:0;return s})}
  const me=d.team.map(id=>d.sheep.find(s=>s.id==id)),b={u:[...me.map(s=>unit(s,0)),...opp.map(s=>unit(s,1))],oname,q:[],cur:null,done:false,ev:[]};
  BT.set(q.n,b);advance(b);if(b.done)finish(d,b);return{bt:bv(b)}};
-A.bact=async(d,body,q)=>{const b=BT.get(q.n);if(!b||b.done||b.cur==null)return{err:'No battle in progress'};const u=b.u[b.cur],mi=body.mi==1?1:0;
- if(mi==1&&u.cd>0)return{err:'Still cooling down'};exec(b,b.cur,mi,body.t|0);b.cur=null;advance(b);if(b.done)finish(d,b);return{bt:bv(b)}};
+A.bact=async(d,body,q)=>{const b=BT.get(q.n);if(!b||b.done||b.cur==null)return{err:'No battle in progress'};const u=b.u[b.cur],mi=body.mi|0;
+ if(mi<0||mi>=2+(u.g.evo|0)||(mi>0&&u.cds[mi]>0))return{err:'Move not ready'};exec(b,b.cur,mi,body.t|0);b.cur=null;advance(b);if(b.done)finish(d,b);return{bt:bv(b)}};
+// ---- live PvP (polling) ----
+const LQ=new Map(),LM=new Map(),LU=new Map(),flush=b=>{b.log.push(...b.ev);b.ev=[]};
+async function mkMatch(k0,k1){const us=await Promise.all([k0,k1].map(x=>db.get(x))),team=us.map(u=>{tick(u.data);return u.data.team.map(id=>u.data.sheep.find(x=>x.id==id))});
+ const b={u:[...team[0].map(x=>unit(x,0)),...team[1].map(x=>unit(x,1))],q:[],cur:null,done:false,ev:[],log:[],pvp:true,turnAt:Date.now()};
+ const m={b,keys:[k0,k1],names:us.map(u=>u.data.name),team:team.map(t=>t.map(x=>x.id)),seen:[Date.now(),Date.now()],t:Date.now()};
+ advance(b);flush(b);const id=Math.random().toString(36).slice(2);LM.set(id,m);LU.set(k0,id);LU.set(k1,id);return m}
+async function finishLive(m){const b=m.b;if(b.paid)return;b.paid=1;b.reward=[null,null];
+ for(const s of[0,1]){const u=await db.get(m.keys[s]);if(!u)continue;const d=u.data,win=(b.win?0:1)==s,c=win?100:25;d.wins+=win?1:0;d.losses+=win?0:1;d.rating=Math.max(0,d.rating+(win?25:-15));d.coins+=c;
+  m.team[s].forEach(id=>gain(d.sheep.find(x=>x.id==id),win?1:.5));b.reward[s]={coins:c,rating:win?25:-15};checkAch(d);await db.put(m.keys[s],u)}}
+const lview=(m,side,since)=>{const b=m.b;return{state:'match',me:side,oname:m.names[1-side],u:vu(b),cur:b.cur,done:b.done,win:b.done?(b.win?0:1)==side:undefined,reward:b.reward&&b.reward[side],ev:b.log.slice(since),n:b.log.length}};
+app.post('/api/live/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.now(),since=q.body.since|0;let m=LM.get(LU.get(k));
+ const forfeit=async side=>{m.b.done=true;m.b.win=side==1;m.b.cur=null;await finishLive(m)};
+ if(a=='leave'){LQ.delete(k);if(m&&!m.b.done)await forfeit(m.keys.indexOf(k));LU.delete(k);return s.json({})}
+ if(!m){if(a!='join')return s.json({state:'none'});for(const[x,e]of LQ)if(now-e.seen>12000)LQ.delete(x);for(const[id,mm]of LM)if(now-mm.t>36e5)LM.delete(id);
+  const o=[...LQ.keys()].find(x=>x!=k);if(o){LQ.delete(o);LQ.delete(k);m=await mkMatch(o,k)}else{LQ.set(k,{seen:now});return s.json({state:'wait'})}}
+ const side=m.keys.indexOf(k),b=m.b;m.seen[side]=now;
+ if(a=='act'){if(b.done||b.cur==null)return s.json({err:'No battle in progress'});const u=b.u[b.cur];if(u.side!=side)return s.json({err:'Not your turn'});const mi=q.body.mi|0;
+  if(mi<0||mi>=2+(u.g.evo|0)||(mi>0&&u.cds[mi]>0))return s.json({err:'Move not ready'});exec(b,b.cur,mi,q.body.t|0);b.cur=null;advance(b);flush(b);if(b.done)await finishLive(m);return s.json(lview(m,side,since))}
+ if(!b.done){if(now-m.seen[1-side]>20000)await forfeit(1-side);else if(b.cur!=null&&now-b.turnAt>30000){ai(b,b.cur);advance(b);flush(b);if(b.done)await finishLive(m)}}
+ s.json(lview(m,side,since))}));
 app.post('/api/act/:a',auth,H(async(q,s)=>{const f=A[q.params.a];if(!f)return s.sendStatus(404);const d=q.u.data;tick(d);const r=await f(d,q.body,q)||{};
  if(r.err)return s.json({err:r.err,d:view(d)});checkAch(d);await db.put(q.n,q.u);s.json({...r,d:view(d)})}));
 app.get('/api/board',H(async(q,s)=>{s.json((await db.all()).map(x=>({name:x.data.name,rating:x.data.rating,wins:x.data.wins,sheep:x.data.sheep.length,best:x.data.best||0})).sort((a,b)=>b.rating-a.rating).slice(0,25))}));
