@@ -28,24 +28,26 @@ app.post('/api/login',H(async(q,s)=>{const k=String(q.body.name||'').trim().toLo
  if(!u||hashPw(q.body.pass||'',u.salt)!==u.hash)return s.json({err:'Wrong name or password'});s.json({token:sign(k,u.hash)})}));
 const auth=(q,s,next)=>{(async()=>{const t=q.get('x-token')||'',n=t.split('.')[0],u=n&&await db.get(n);
  if(!u||sign(n,u.hash)!==t)return s.status(401).json({err:'Please log in again'});q.n=n;q.u=u;next()})().catch(()=>s.status(500).json({err:'Server error'}))};
-function tick(d){const now=Date.now(),dt=Math.max(0,(now-d.t)/1000);d.t=now;d.wool+=G.rate(d)*dt;const c=G.cap(d);
+const prog=(d,k,n=1)=>{const x=d.q&&d.q.l.find(y=>y.k==k);if(x)x.h+=n};
+function tick(d){const day=Math.floor(Date.now()/864e5);if(!d.q||d.q.day!=day){const ks=Object.keys(G.QUESTS).sort(()=>Math.random()-.5).slice(0,3);d.q={day,l:ks.map(k=>({k,n:pick(G.QUESTS[k][1]),h:0,r:Math.max(200,Math.round(G.rate(d)*500)),c:0}))}}
+ const now=Date.now(),dt=Math.max(0,(now-d.t)/1000);d.t=now;d.wool+=G.rate(d)*dt;const c=G.cap(d);
  if(d.wool>c){if(d.b.auto)d.coins+=(d.wool-c)*G.price(d)*Math.min(1,.2*d.b.auto);d.wool=c}
  d.team=d.team.filter(id=>d.sheep.some(s=>s.id==id));for(const s of[...d.sheep].sort((a,b)=>b.r-a.r))if(d.team.length<3&&!d.team.includes(s.id))d.team.push(s.id)}
 function checkAch(d){for(const[id,,f,c]of G.ACH)if(!d.ach.includes(id)&&f(d)){d.ach.push(id);d.coins+=c}}
 const view=d=>({...d,calc:{rate:G.rate(d),cap:G.cap(d),price:G.price(d),slots:G.slots(d)}});
 const A={};
 A.state=async()=>({});
-A.sell=async d=>{const c=Math.floor(d.wool*G.price(d));d.coins+=c;d.wool=0;return{gain:c}};
+A.sell=async d=>{const c=Math.floor(d.wool*G.price(d));d.coins+=c;d.wool=0;prog(d,'sell');return{gain:c}};
 A.hatch=async(d,b)=>{const ei=b.egg|0,e=G.EGG[ei],n=b.n==10?10:1;if(!e)return{err:'No such egg'};if(d.coins<e.cost*n)return{err:'Not enough coins'};
  if(d.sheep.length+n>G.slots(d))return{err:n>1?'You need '+n+' free pasture slots':'Pasture full! Release a sheep or upgrade the Pasture.'};
  d.coins-=e.cost*n;d.dex=d.dex||[];const out=[];for(let i=0;i<n;i++){const x=G.roll(ei);d.sheep.push(x);d.hatched++;d.best=Math.max(d.best||0,x.r);const k=(x.form|0)+'-'+x.r;if(!d.dex.includes(k))d.dex.push(k);out.push(x)}
- return{sheep:out[n-1],batch:out}};
+ prog(d,'hatch',n);return{sheep:out[n-1],batch:out}};
 A.upgrade=async(d,b)=>{const x=G.B.find(y=>y[0]==b.b);if(!x)return{err:'?'};const l=d.b[x[0]];if(l>=(x[0]=='auto'?5:10))return{err:'Max level'};
  const c=G.bcost(x,l);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;d.b[x[0]]++;return{}};
 A.team=async(d,b)=>{const ids=[...new Set(b.ids||[])];if(ids.length!=3||!ids.every(i=>d.sheep.some(s=>s.id==i)))return{err:'Pick 3 different sheep'};d.team=ids;return{}};
 A.release=async(d,b)=>{const i=d.sheep.findIndex(s=>s.id==b.id);if(i<0)return{err:'?'};if(d.sheep.length<=3)return{err:'Keep at least 3 sheep'};
  const[s]=d.sheep.splice(i,1);d.coins+=G.RAR[s.r].v;d.team=d.team.filter(x=>x!=s.id);tick(d);return{}};
-A.train=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};if(s.lv>=20)return{err:'Max level'};const c=G.trainCost(s);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;s.lv++;s.xp=(s.lv-1)*1.5;return{sheep:s}};
+A.train=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};if(s.lv>=20)return{err:'Max level'};const c=G.trainCost(s);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;s.lv++;s.xp=(s.lv-1)*1.5;prog(d,'train');return{sheep:s}};
 A.daily=async d=>{const now=Date.now();if(now-(d.daily||0)<20*36e5)return{err:'Already claimed today'};d.streak=now-(d.daily||0)<48*36e5?(d.streak|0)+1:1;const c=150+50*Math.min(d.streak,10);d.coins+=c;d.daily=now;return{gain:c}};
 // ---- battles ----
 const BT=new Map();
@@ -77,18 +79,25 @@ function advance(b){for(let g=0;g<300;g++){const al=n=>b.u.filter(u=>u.hp>0&&u.s
 const vu=b=>b.u.map(({name,role,el,g,hp,max,cds,sh,stun,side})=>({name,role,el,g,hp,max,cds,sh,stun,side}));
 const bv=b=>{const ev=b.ev;b.ev=[];return{u:vu(b),cur:b.cur,done:b.done,win:b.win,oname:b.oname,reward:b.reward,ev}};
 const gain=(s,x)=>{if(s&&s.lv<20){s.xp+=x;s.lv=Math.min(20,1+Math.floor(s.xp/1.5))}};
-function finish(d,b){if(b.paid)return;b.paid=1;
- if(b.win){const pw=b.u.filter(x=>x.side==1).reduce((a,x)=>a+x.max+x.atk*4,0),c=Math.round(40+pw/6);d.wins++;d.rating+=20;d.coins+=c;b.reward={coins:c,rating:20};d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),1))}
- else{d.losses++;d.rating=Math.max(0,d.rating-12);d.coins+=15;b.reward={coins:15,rating:-12};d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),.5))}}
+function finish(d,b){if(b.paid)return;b.paid=1;const st=b.stage|0;
+ if(b.win){prog(d,'win');d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),1));
+  if(st){const first=st>(d.adv|0),c=Math.round(200*st*(1+st/10)*(first?1:.25));d.wins++;d.coins+=c;b.reward={coins:c,rating:0,first};prog(d,'adv');
+   if(first){d.adv=st;if(st%5==0){const ei=Math.min(4,Math.floor(st/8)),x=G.roll(ei);if(d.sheep.length<G.slots(d)){d.sheep.push(x);d.best=Math.max(d.best||0,x.r);d.dex=d.dex||[];const k=(x.form|0)+'-'+x.r;if(!d.dex.includes(k))d.dex.push(k);b.reward.sheep=x.name}else d.coins+=G.EGG[ei].cost}}}
+  else{const pw=b.u.filter(x=>x.side==1).reduce((a,x)=>a+x.max+x.atk*4,0),c=Math.round(40+pw/6);d.wins++;d.rating+=20;d.coins+=c;b.reward={coins:c,rating:20}}}
+ else{if(st){d.coins+=10;b.reward={coins:10,rating:0}}else{d.losses++;d.rating=Math.max(0,d.rating-12);d.coins+=15;b.reward={coins:15,rating:-12}}d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),.5))}}
+A.claimq=async(d,b)=>{const x=d.q&&d.q.l[b.i|0];if(!x||x.c||x.h<x.n)return{err:'Not ready yet'};x.c=1;d.coins+=x.r;return{gain:x.r}};
+A.golden=async d=>{const now=Date.now();if(now-(d.gt||0)<30000)return{err:'Too soon'};d.gt=now;const c=Math.max(50,Math.round(G.rate(d)*90));d.coins+=c;prog(d,'golden');return{gain:c}};
 A.evolve=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};const e=s.evo|0;if(e>=2)return{err:'Already fully evolved'};if(s.lv<G.evoLv[e])return{err:'Needs level '+G.evoLv[e]};
  const c=G.evoCost(s);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;s.evo=e+1;return{sheep:s}};
-A.bstart=async(d,_,q)=>{const me=d.team.map(id=>d.sheep.find(s=>s.id==id)),pw=ts=>ts.reduce((a,s)=>{const t=G.stats(s);return a+t.hp+t.atk*4},0),mine=pw(me);
- const all=(await db.all()).filter(x=>x.name!=q.n&&x.data.team&&x.data.team.length==3).map(x=>({x,t:x.data.team.map(id=>x.data.sheep.find(s=>s.id==id)).filter(Boolean)})).filter(o=>o.t.length==3&&pw(o.t)<=mine*1.05)
-  .sort((a,c)=>Math.abs(a.x.data.rating-d.rating)-Math.abs(c.x.data.rating-d.rating));
- const o=all.length&&Math.random()<.7?pick(all.slice(0,4)):null;let opp,oname=o?o.x.data.name:'Farmer Bot';
- if(o)opp=o.t;else opp=me.map(m=>{const s=G.roll(0,Math.random,Math.max(0,m.r-(Math.random()<.6?1:0)));s.lv=Math.max(1,m.lv-1-Math.floor(Math.random()*3));s.evo=Math.max(0,Math.min((m.evo|0)-1,s.lv>=12?2:s.lv>=5?1:0));return s});
- const b={u:[...me.map(s=>unit(s,0)),...opp.map(s=>unit(s,1))],oname,q:[],cur:null,done:false,ev:[],dumb:!o};
- if(!o)b.u.filter(x=>x.side==1).forEach(x=>{x.max=x.hp=Math.round(x.max*.92);x.atk=Math.round(x.atk*.92)});
+A.bstart=async(d,body,q)=>{const st=(body&&body.stage)|0,me=d.team.map(id=>d.sheep.find(s=>s.id==id)),pw=ts=>ts.reduce((a,s)=>{const t=G.stats(s);return a+t.hp+t.atk*4},0),mine=pw(me);let opp,oname,o=null;
+ if(st){if(st>30||st>(d.adv|0)+1)return{err:'Beat the earlier stages first'};oname=G.STAGE_NAMES[st-1];
+  opp=[0,1,2].map(k=>{const r=Math.min(6,Math.floor(st/5)+(k==2&&st%5==0?1:0)),s=G.roll(0,Math.random,r);s.lv=Math.min(20,1+Math.floor(st*.7));s.evo=s.lv>=12?2:s.lv>=5?1:0;return s})}
+ else{const all=(await db.all()).filter(x=>x.name!=q.n&&x.data.team&&x.data.team.length==3).map(x=>({x,t:x.data.team.map(id=>x.data.sheep.find(s=>s.id==id)).filter(Boolean)})).filter(o=>o.t.length==3&&pw(o.t)<=mine*1.05)
+   .sort((a,c)=>Math.abs(a.x.data.rating-d.rating)-Math.abs(c.x.data.rating-d.rating));
+  o=all.length&&Math.random()<.7?pick(all.slice(0,4)):null;oname=o?o.x.data.name:'Farmer Bot';
+  opp=o?o.t:me.map(m=>{const s=G.roll(0,Math.random,Math.max(0,m.r-(Math.random()<.6?1:0)));s.lv=Math.max(1,m.lv-1-Math.floor(Math.random()*3));s.evo=Math.max(0,Math.min((m.evo|0)-1,s.lv>=12?2:s.lv>=5?1:0));return s})}
+ const b={u:[...me.map(s=>unit(s,0)),...opp.map(s=>unit(s,1))],oname,q:[],cur:null,done:false,ev:[],stage:st,dumb:st?st<8:!o};
+ if(st?st<5:!o)b.u.filter(x=>x.side==1).forEach(x=>{x.max=x.hp=Math.round(x.max*.92);x.atk=Math.round(x.atk*.92)});
  BT.set(q.n,b);advance(b);if(b.done)finish(d,b);return{bt:bv(b)}};
 A.bact=async(d,body,q)=>{const b=BT.get(q.n);if(!b||b.done||b.cur==null)return{err:'No battle in progress'};const u=b.u[b.cur],mi=body.mi|0;
  if(mi<0||mi>=2+(u.g.evo|0)||(mi>0&&u.cds[mi]>0))return{err:'Move not ready'};exec(b,b.cur,mi,body.t|0);b.cur=null;advance(b);if(b.done)finish(d,b);return{bt:bv(b)}};
@@ -99,7 +108,7 @@ async function mkMatch(k0,k1){const us=await Promise.all([k0,k1].map(x=>db.get(x
  const m={b,keys:[k0,k1],names:us.map(u=>u.data.name),team:team.map(t=>t.map(x=>x.id)),seen:[Date.now(),Date.now()],t:Date.now()};
  advance(b);flush(b);const id=Math.random().toString(36).slice(2);LM.set(id,m);LU.set(k0,id);LU.set(k1,id);return m}
 async function finishLive(m){const b=m.b;if(b.paid)return;b.paid=1;b.reward=[null,null];
- for(const s of[0,1]){const u=await db.get(m.keys[s]);if(!u)continue;const d=u.data,win=(b.win?0:1)==s,c=win?100:25;d.wins+=win?1:0;d.losses+=win?0:1;d.rating=Math.max(0,d.rating+(win?25:-15));d.coins+=c;
+ for(const s of[0,1]){const u=await db.get(m.keys[s]);if(!u)continue;const d=u.data,win=(b.win?0:1)==s,c=win?100:25;if(win)prog(d,'win');d.wins+=win?1:0;d.losses+=win?0:1;d.rating=Math.max(0,d.rating+(win?25:-15));d.coins+=c;
   m.team[s].forEach(id=>gain(d.sheep.find(x=>x.id==id),win?1:.5));b.reward[s]={coins:c,rating:win?25:-15};checkAch(d);await db.put(m.keys[s],u)}}
 const lview=(m,side,since)=>{const b=m.b;return{state:'match',me:side,oname:m.names[1-side],u:vu(b),cur:b.cur,done:b.done,win:b.done?(b.win?0:1)==side:undefined,reward:b.reward&&b.reward[side],ev:b.log.slice(since),n:b.log.length}};
 app.post('/api/live/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.now(),since=q.body.since|0;let m=LM.get(LU.get(k));
