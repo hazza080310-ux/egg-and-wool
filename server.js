@@ -19,7 +19,7 @@ const sign=(n,h)=>n+'.'+crypto.createHmac('sha256',SECRET).update(n+h).digest('h
 const hashPw=(p,s)=>crypto.scryptSync(String(p),s,32).toString('hex');
 const pick=a=>a[Math.floor(Math.random()*a.length)];
 function newPlayer(name){const sheep=[0,1,2].map(()=>{let s;do s=G.roll(0);while(s.r>0);return s});
- return{name,coins:60,wool:0,t:Date.now(),sheep,b:{barn:0,shed:0,pasture:0,market:0,auto:0},team:sheep.map(s=>s.id),hatched:0,wins:0,losses:0,rating:1000,best:0,ach:[]}}
+ return{name,coins:60,wool:0,t:Date.now(),sheep,b:{barn:0,shed:0,pasture:0,market:0,auto:0},team:sheep.map(s=>s.id),hatched:0,wins:0,losses:0,rating:1000,best:0,ach:[],dex:[],daily:0,streak:0}}
 app.post('/api/register',H(async(q,s)=>{let{name,pass}=q.body;name=String(name||'').trim();
  if(!/^[A-Za-z0-9_]{3,16}$/.test(name)||String(pass||'').length<4)return s.json({err:'Name: 3-16 letters/numbers/_. Password: 4+ characters.'});
  const k=name.toLowerCase();if(await db.get(k))return s.json({err:'That name is taken'});
@@ -36,14 +36,17 @@ const view=d=>({...d,calc:{rate:G.rate(d),cap:G.cap(d),price:G.price(d),slots:G.
 const A={};
 A.state=async()=>({});
 A.sell=async d=>{const c=Math.floor(d.wool*G.price(d));d.coins+=c;d.wool=0;return{gain:c}};
-A.hatch=async(d,b)=>{const e=G.EGG[b.egg|0];if(!e)return{err:'No such egg'};if(d.coins<e.cost)return{err:'Not enough coins'};
- if(d.sheep.length>=G.slots(d))return{err:'Pasture full! Release a sheep or upgrade the Pasture.'};
- d.coins-=e.cost;const s=G.roll(b.egg|0);d.sheep.push(s);d.hatched++;d.best=Math.max(d.best||0,s.r);return{sheep:s}};
+A.hatch=async(d,b)=>{const ei=b.egg|0,e=G.EGG[ei],n=b.n==10?10:1;if(!e)return{err:'No such egg'};if(d.coins<e.cost*n)return{err:'Not enough coins'};
+ if(d.sheep.length+n>G.slots(d))return{err:n>1?'You need '+n+' free pasture slots':'Pasture full! Release a sheep or upgrade the Pasture.'};
+ d.coins-=e.cost*n;d.dex=d.dex||[];const out=[];for(let i=0;i<n;i++){const x=G.roll(ei);d.sheep.push(x);d.hatched++;d.best=Math.max(d.best||0,x.r);const k=(x.form|0)+'-'+x.r;if(!d.dex.includes(k))d.dex.push(k);out.push(x)}
+ return{sheep:out[n-1],batch:out}};
 A.upgrade=async(d,b)=>{const x=G.B.find(y=>y[0]==b.b);if(!x)return{err:'?'};const l=d.b[x[0]];if(l>=(x[0]=='auto'?5:10))return{err:'Max level'};
  const c=G.bcost(x,l);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;d.b[x[0]]++;return{}};
 A.team=async(d,b)=>{const ids=[...new Set(b.ids||[])];if(ids.length!=3||!ids.every(i=>d.sheep.some(s=>s.id==i)))return{err:'Pick 3 different sheep'};d.team=ids;return{}};
 A.release=async(d,b)=>{const i=d.sheep.findIndex(s=>s.id==b.id);if(i<0)return{err:'?'};if(d.sheep.length<=3)return{err:'Keep at least 3 sheep'};
  const[s]=d.sheep.splice(i,1);d.coins+=G.RAR[s.r].v;d.team=d.team.filter(x=>x!=s.id);tick(d);return{}};
+A.train=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};if(s.lv>=20)return{err:'Max level'};const c=G.trainCost(s);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;s.lv++;s.xp=(s.lv-1)*1.5;return{sheep:s}};
+A.daily=async d=>{const now=Date.now();if(now-(d.daily||0)<20*36e5)return{err:'Already claimed today'};d.streak=now-(d.daily||0)<48*36e5?(d.streak|0)+1:1;const c=150+50*Math.min(d.streak,10);d.coins+=c;d.daily=now;return{gain:c}};
 // ---- battles ----
 const BT=new Map();
 const unit=(s,side)=>{const st=G.stats(s);return{side,name:s.name,role:s.role,el:s.el,g:s,hp:st.hp,max:st.hp,atk:st.atk,def:st.def,spd:st.spd,cds:[0,0,0,0],sh:0,stun:0,trait:s.trait}};
@@ -62,8 +65,8 @@ function exec(b,i,mi,t){const u=b.u[i],m=G.ROLES[u.role].mv[mi],foes=b.u.filter(
  else if(ty=='healall'){const v=Math.round(u.atk*m[2]);fr.forEach(x=>x.hp=Math.min(x.max,x.hp+v));E(b,`${u.name} sings ${m[0]} (+${v} HP each)`,i,fr.map(ix),v,'h')}
  else{fr.forEach(x=>x.sh+=Math.round(x.max*m[2]));E(b,`${u.name} raises ${m[0]}!`,i,fr.map(ix),0,'s')}}
 function ai(b,i){const u=b.u[i],mv=G.ROLES[u.role].mv,foes=b.u.filter(x=>x.side!=u.side&&x.hp>0),fr=b.u.filter(x=>x.side==u.side&&x.hp>0),ok=[];
- for(let k=1;k<2+(u.g.evo|0);k++)if(u.cds[k]==0)ok.push(k);const mi=ok.length&&Math.random()<.65?pick(ok):0;let t;
- if(mv[mi][1]=='heal')t=fr.sort((a,c)=>a.hp/a.max-c.hp/c.max)[0];else{foes.sort((a,c)=>a.hp-c.hp);t=Math.random()<.6?foes[0]:pick(foes)}exec(b,i,mi,b.u.indexOf(t))}
+ for(let k=1;k<2+(u.g.evo|0);k++)if(u.cds[k]==0)ok.push(k);const mi=ok.length&&Math.random()<(b.dumb?.4:.65)?pick(ok):0;let t;
+ if(mv[mi][1]=='heal')t=fr.sort((a,c)=>a.hp/a.max-c.hp/c.max)[0];else{foes.sort((a,c)=>a.hp-c.hp);t=Math.random()<(b.dumb?.3:.6)?foes[0]:pick(foes)}exec(b,i,mi,b.u.indexOf(t))}
 function advance(b){for(let g=0;g<300;g++){const al=n=>b.u.filter(u=>u.hp>0&&u.side==n).length;
  if(!al(0)||!al(1)){b.done=true;b.win=al(0)?true:al(1)?false:Math.random()<.5;b.cur=null;return}
  if(!b.q.length){b.q=b.u.map((u,i)=>i).filter(i=>b.u[i].hp>0).sort((x,y)=>b.u[y].spd-b.u[x].spd);b.round=(b.round|0)+1;
@@ -79,10 +82,13 @@ function finish(d,b){if(b.paid)return;b.paid=1;
  else{d.losses++;d.rating=Math.max(0,d.rating-12);d.coins+=15;b.reward={coins:15,rating:-12};d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),.5))}}
 A.evolve=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};const e=s.evo|0;if(e>=2)return{err:'Already fully evolved'};if(s.lv<G.evoLv[e])return{err:'Needs level '+G.evoLv[e]};
  const c=G.evoCost(s);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;s.evo=e+1;return{sheep:s}};
-A.bstart=async(d,_,q)=>{const all=(await db.all()).filter(x=>x.name!=q.n&&x.data.team&&x.data.team.length==3).sort((a,c)=>Math.abs(a.data.rating-d.rating)-Math.abs(c.data.rating-d.rating)).slice(0,4);
- let opp,oname;if(all.length&&Math.random()<.85){const o=pick(all);oname=o.data.name;opp=o.data.team.map(id=>o.data.sheep.find(s=>s.id==id)).filter(Boolean)}
- if(!opp||opp.length<3){oname='Farmer Bot';const e=d.rating<1100?0:d.rating<1300?1:2;opp=[0,1,2].map(()=>{const s=G.roll(e);s.lv=Math.max(1,Math.min(20,1+Math.floor((d.rating-1000)/60)));s.evo=s.lv>=12?2:s.lv>=5?1:0;return s})}
- const me=d.team.map(id=>d.sheep.find(s=>s.id==id)),b={u:[...me.map(s=>unit(s,0)),...opp.map(s=>unit(s,1))],oname,q:[],cur:null,done:false,ev:[]};
+A.bstart=async(d,_,q)=>{const me=d.team.map(id=>d.sheep.find(s=>s.id==id)),pw=ts=>ts.reduce((a,s)=>{const t=G.stats(s);return a+t.hp+t.atk*4},0),mine=pw(me);
+ const all=(await db.all()).filter(x=>x.name!=q.n&&x.data.team&&x.data.team.length==3).map(x=>({x,t:x.data.team.map(id=>x.data.sheep.find(s=>s.id==id)).filter(Boolean)})).filter(o=>o.t.length==3&&pw(o.t)<=mine*1.05)
+  .sort((a,c)=>Math.abs(a.x.data.rating-d.rating)-Math.abs(c.x.data.rating-d.rating));
+ const o=all.length&&Math.random()<.7?pick(all.slice(0,4)):null;let opp,oname=o?o.x.data.name:'Farmer Bot';
+ if(o)opp=o.t;else opp=me.map(m=>{const s=G.roll(0,Math.random,Math.max(0,m.r-(Math.random()<.6?1:0)));s.lv=Math.max(1,m.lv-1-Math.floor(Math.random()*3));s.evo=Math.max(0,Math.min((m.evo|0)-1,s.lv>=12?2:s.lv>=5?1:0));return s});
+ const b={u:[...me.map(s=>unit(s,0)),...opp.map(s=>unit(s,1))],oname,q:[],cur:null,done:false,ev:[],dumb:!o};
+ if(!o)b.u.filter(x=>x.side==1).forEach(x=>{x.max=x.hp=Math.round(x.max*.92);x.atk=Math.round(x.atk*.92)});
  BT.set(q.n,b);advance(b);if(b.done)finish(d,b);return{bt:bv(b)}};
 A.bact=async(d,body,q)=>{const b=BT.get(q.n);if(!b||b.done||b.cur==null)return{err:'No battle in progress'};const u=b.u[b.cur],mi=body.mi|0;
  if(mi<0||mi>=2+(u.g.evo|0)||(mi>0&&u.cds[mi]>0))return{err:'Move not ready'};exec(b,b.cur,mi,body.t|0);b.cur=null;advance(b);if(b.done)finish(d,b);return{bt:bv(b)}};
