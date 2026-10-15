@@ -52,11 +52,12 @@ A.train=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};i
 A.daily=async d=>{const now=Date.now();if(now-(d.daily||0)<20*36e5)return{err:'Already claimed today'};d.streak=now-(d.daily||0)<48*36e5?(d.streak|0)+1:1;const c=150+50*Math.min(d.streak,10);d.coins+=c;d.daily=now;return{gain:c}};
 // ---- battles ----
 const BT=new Map();
-const unit=(s,side)=>{const st=G.stats(s);return{side,name:s.name,role:s.role,el:s.el,g:s,hp:st.hp,max:st.hp,atk:st.atk,def:st.def,spd:st.spd,cds:[0,0,0,0,0,0],burn:0,mv:G.moves(s),sh:0,stun:0,trait:s.trait}};
+const unit=(s,side)=>{const st=G.stats(s);return{side,name:s.name,role:s.role,el:s.el,g:s,hp:st.hp,max:st.hp,atk:st.atk,def:st.def,spd:st.spd,cds:[0,0,0,0,0,0],burn:0,mv:G.moves(s),sh:0,shd:{},stun:0,trait:s.trait}};
 const elm=G.elm;
 const E=(b,m,a,to,v,k)=>b.ev.push({m,a,to:to||[],v,k,hp:b.u.map(x=>x.hp),sh:b.u.map(x=>x.sh)});
 function hit(u,x,mult){const e=elm(u.el,x.el),crit=u.trait=='lucky'&&Math.random()<.2;
- const v=Math.max(1,Math.round(u.atk*mult*e*(crit?1.5:1)*(.9+Math.random()*.2)*100/(100+x.def)));const a=Math.min(x.sh,v);x.sh-=a;x.hp=Math.max(0,x.hp-(v-a));return{v,crit,e}}
+ const v=Math.max(1,Math.round(u.atk*mult*e*(crit?1.5:1)*(.9+Math.random()*.2)*100/(100+x.def)));let rem=v;for(const k of Object.keys(x.shd)){const a=Math.min(x.shd[k],rem);x.shd[k]-=a;rem-=a;if(x.shd[k]<=0)delete x.shd[k]}x.sh=Object.values(x.shd).reduce((p,c)=>p+c,0);x.hp=Math.max(0,x.hp-rem);return{v,crit,e}}
+const addSh=(x,n,a)=>{x.shd[n]=Math.max(x.shd[n]||0,a);x.sh=Object.values(x.shd).reduce((p,c)=>p+c,0)};
 const eff=r=>(r.crit?' CRIT!':'')+(r.e>1?' Super effective!':r.e<1?' Not very effective.':'');
 function exec(b,i,mi,t){const u=b.u[i],m=u.mv[mi],foes=b.u.filter(x=>x.side!=u.side&&x.hp>0),fr=b.u.filter(x=>x.side==u.side&&x.hp>0),tg=b.u[t],ix=x=>b.u.indexOf(x),ty=m[1];
  if(m[3])u.cds[mi]=m[3];
@@ -71,7 +72,7 @@ function exec(b,i,mi,t){const u=b.u[i],m=u.mv[mi],foes=b.u.filter(x=>x.side!=u.s
   E(b,`${u.name} unleashes ${m[0]}!${ty=='stunall'?' Everyone is dizzy!':ty=='burnall'?' Everyone is on fire!':ty=='freezeall'?' A chilly mess!':''}`,i,foes.map(ix),v,'d')}
  else if(ty=='heal'){const x=tg&&tg.hp>0&&tg.side==u.side?tg:fr.sort((a,c)=>a.hp/a.max-c.hp/c.max)[0],v=Math.round(u.atk*m[2]);x.hp=Math.min(x.max,x.hp+v);E(b,`${u.name} hugs ${x.name} (+${v} HP)`,i,[ix(x)],v,'h')}
  else if(ty=='healall'){const v=Math.round(u.atk*m[2]);fr.forEach(x=>x.hp=Math.min(x.max,x.hp+v));E(b,`${u.name} sings ${m[0]} (+${v} HP each)`,i,fr.map(ix),v,'h')}
- else{fr.forEach(x=>x.sh+=Math.round(x.max*m[2]));E(b,`${u.name} raises ${m[0]}!`,i,fr.map(ix),0,'s')}}
+ else{fr.forEach(x=>addSh(x,m[0],m[2]<1?Math.round(x.max*m[2]):m[2]));E(b,`${u.name} raises ${m[0]}!`,i,fr.map(ix),0,'s')}}
 function ai(b,i){const u=b.u[i],mv=u.mv,foes=b.u.filter(x=>x.side!=u.side&&x.hp>0),fr=b.u.filter(x=>x.side==u.side&&x.hp>0),ok=[];
  for(let k=1;k<u.mv.length;k++)if(u.cds[k]==0)ok.push(k);const mi=ok.length&&Math.random()<(b.dumb?.4:.65)?pick(ok):0;let t;
  if(mv[mi][1]=='heal')t=fr.sort((a,c)=>a.hp/a.max-c.hp/c.max)[0];else{foes.sort((a,c)=>a.hp-c.hp);t=Math.random()<(b.dumb?.3:.6)?foes[0]:pick(foes)}exec(b,i,mi,b.u.indexOf(t))}
