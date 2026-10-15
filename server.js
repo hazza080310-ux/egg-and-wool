@@ -19,7 +19,7 @@ const sign=(n,h)=>n+'.'+crypto.createHmac('sha256',SECRET).update(n+h).digest('h
 const hashPw=(p,s)=>crypto.scryptSync(String(p),s,32).toString('hex');
 const pick=a=>a[Math.floor(Math.random()*a.length)];
 function newPlayer(name){const sheep=[0,1,2].map(()=>{let s;do s=G.roll(0);while(s.r>0);return s});
- return{name,coins:60,wool:0,t:Date.now(),sheep,b:{barn:0,shed:0,pasture:0,market:0,auto:0},team:sheep.map(s=>s.id),hatched:0,wins:0,losses:0,rating:1000,best:0,ach:[],dex:[],daily:0,streak:0}}
+ return{name,coins:60,wool:0,t:Date.now(),sheep,b:{barn:0,shed:0,pasture:0,market:0,auto:0},team:sheep.map(s=>s.id),hatched:0,wins:0,losses:0,rating:1000,best:0,ach:[],dex:[],daily:0,streak:0,tut:0}}
 app.post('/api/register',H(async(q,s)=>{let{name,pass}=q.body;name=String(name||'').trim();
  if(!/^[A-Za-z0-9_]{3,16}$/.test(name)||String(pass||'').length<4)return s.json({err:'Name: 3-16 letters/numbers/_. Password: 4+ characters.'});
  const k=name.toLowerCase();if(await db.get(k))return s.json({err:'That name is taken'});
@@ -47,6 +47,7 @@ A.upgrade=async(d,b)=>{const x=G.B.find(y=>y[0]==b.b);if(!x)return{err:'?'};cons
 A.team=async(d,b)=>{const ids=[...new Set(b.ids||[])];if(ids.length!=3||!ids.every(i=>d.sheep.some(s=>s.id==i)))return{err:'Pick 3 different sheep'};d.team=ids;return{}};
 A.release=async(d,b)=>{const i=d.sheep.findIndex(s=>s.id==b.id);if(i<0)return{err:'?'};if(d.sheep.length<=3)return{err:'Keep at least 3 sheep'};
  const[s]=d.sheep.splice(i,1);d.coins+=G.RAR[s.r].v;d.team=d.team.filter(x=>x!=s.id);tick(d);return{}};
+A.tutdone=async d=>{d.tut=1;return{}};
 A.train=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};if(s.lv>=20)return{err:'Max level'};const c=G.trainCost(s);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;s.lv++;s.xp=(s.lv-1)*1.5;prog(d,'train');return{sheep:s}};
 A.daily=async d=>{const now=Date.now();if(now-(d.daily||0)<20*36e5)return{err:'Already claimed today'};d.streak=now-(d.daily||0)<48*36e5?(d.streak|0)+1:1;const c=150+50*Math.min(d.streak,10);d.coins+=c;d.daily=now;return{gain:c}};
 // ---- battles ----
