@@ -64,7 +64,7 @@ const E=(b,m,a,to,v,k)=>b.ev.push({m,a,to:to||[],v,k,hp:b.u.map(x=>x.hp),sh:b.u.
 function hit(u,x,mult){const e=elm(u.el,x.el),crit=u.trait=='lucky'&&Math.random()<.2;
  const v=Math.max(1,Math.round(u.atk*mult*e*(crit?1.5:1)*(.9+Math.random()*.2)*100/(100+x.def)));let rem=v;for(const k of Object.keys(x.shd)){const a=Math.min(x.shd[k],rem);x.shd[k]-=a;rem-=a;if(x.shd[k]<=0)delete x.shd[k]}x.sh=Object.values(x.shd).reduce((p,c)=>p+c,0);x.hp=Math.max(0,x.hp-rem);if(x.pas=='thorns'&&v>0)u.hp=Math.max(0,u.hp-Math.round(v*.2));if(u.pas=='vamp')u.hp=Math.min(u.max,u.hp+Math.round(v*.25));return{v,crit,e}}
 const applyAura=b=>{for(const sd of[0,1])if(b.u.some(x=>x.side==sd&&x.pas=='quack'))b.u.forEach(x=>{if(x.side==sd)x.atk=Math.round(x.atk*1.15)})};
-const addSh=(x,n,a)=>{x.shd[n]=Math.max(x.shd[n]||0,a);x.sh=Object.values(x.shd).reduce((p,c)=>p+c,0)};
+const addSh=(x,n,a)=>{x.shd[n]=Math.max(x.shd[n]||0,a);const sum=()=>Object.values(x.shd).reduce((p,c)=>p+c,0);let t=sum();if(t>60){x.shd[n]=Math.max(0,x.shd[n]-(t-60));if(!x.shd[n])delete x.shd[n];t=sum()}x.sh=t};
 const eff=r=>(r.crit?' CRIT!':'')+(r.e>1?' Super effective!':r.e<1?' Not very effective.':'');
 function exec(b,i,mi,t){const u=b.u[i],m=u.mv[mi],foes=b.u.filter(x=>x.side!=u.side&&x.hp>0),fr=b.u.filter(x=>x.side==u.side&&x.hp>0),tg=b.u[t],ix=x=>b.u.indexOf(x),ty=m[1];
  if(m[3])u.cds[mi]=m[3];
