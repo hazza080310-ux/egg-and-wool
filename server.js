@@ -32,8 +32,8 @@ const auth=(q,s,next)=>{(async()=>{const t=q.get('x-token')||'',n=t.split('.')[0
  if(!u||sign(n,u.hash)!==t)return s.status(401).json({err:'Please log in again'});q.n=n;q.u=u;next()})().catch(()=>s.status(500).json({err:'Server error'}))};
 const prog=(d,k,n=1)=>{const x=d.q&&d.q.l.find(y=>y.k==k);if(x)x.h+=n};
 function tick(d){const day=Math.floor(Date.now()/864e5);if(!d.q||d.q.day!=day){const ks=Object.keys(G.QUESTS).sort(()=>Math.random()-.5).slice(0,3);d.q={day,l:ks.map(k=>({k,n:pick(G.QUESTS[k][1]),h:0,r:Math.max(200,Math.round(G.rate(d)*500)),c:0}))}}
- const now=Date.now(),dt=Math.max(0,(now-d.t)/1000);d.t=now;d.wool+=G.rate(d)*dt;const c=G.cap(d);
- if(d.wool>c){if(d.b.auto)d.coins+=(d.wool-c)*G.price(d)*Math.min(1,.2*d.b.auto);d.wool=c}
+ const now=Date.now(),dt=Math.min(90,Math.max(0,(now-d.t)/1000));d.t=now;d.wool+=G.rate(d)*dt;const c=G.cap(d);
+ if(d.wool>c)d.wool=c
  d.team=d.team.filter(id=>d.sheep.some(s=>s.id==id));for(const s of[...d.sheep].sort((a,b)=>b.r-a.r))if(d.team.length<3&&!d.team.includes(s.id))d.team.push(s.id)}
 function checkAch(d){for(const[id,,f,c]of G.ACH)if(!d.ach.includes(id)&&f(d)){d.ach.push(id);d.coins+=c}}
 const grantSp=d=>{d.spl=d.spl||[];const out=[];for(const x of G.SPECIALS)if(!d.spl.includes(x.id)&&!d.sheep.some(y=>y.sp==x.id)&&x.cond(d)){d.spl.push(x.id);d.sheep.push(G.mkSpecial(x.id));out.push(x.name)}return out};
@@ -120,7 +120,7 @@ A.bstart=async(d,body,q)=>{const st=(body&&body.stage)|0,me=d.team.map(id=>d.she
  if(st?st<5:(war?false:!o))b.u.filter(x=>x.side==1).forEach(x=>{x.max=x.hp=Math.round(x.max*.92);x.atk=Math.round(x.atk*.92)});
  applyAura(b);BT.set(q.n,b);advance(b);if(b.done){finish(d,b);if(b.war)await warDone(d,b,q)}return{bt:bv(b)}};
 A.bact=async(d,body,q)=>{const b=BT.get(q.n);if(!b||b.done||b.cur==null)return{err:'No battle in progress'};const u=b.u[b.cur],mi=body.mi|0;
- if(mi<0||mi>=u.mv.length||(mi>0&&u.cds[mi]>0))return{err:'Move not ready'};exec(b,b.cur,mi,body.t|0);b.cur=null;advance(b);if(b.done){finish(d,b);if(b.war)await warDone(d,b,q)}return{bt:bv(b)}};
+ if(mi<0||mi>=u.mv.length||(mi>0&&u.cds[mi]>0))return{err:'Move not ready'};try{exec(b,b.cur,mi,body.t|0)}catch(e){console.error('exec',e)}b.cur=null;try{advance(b)}catch(e){console.error('advance',e);b.done=true;b.win=false;b.cur=null}if(b.done){finish(d,b);if(b.war)await warDone(d,b,q)}return{bt:bv(b)}};
 // ---- live PvP (polling) ----
 const LQ=new Map(),LM=new Map(),LU=new Map(),flush=b=>{b.log.push(...b.ev);b.ev=[]};
 async function mkMatch(k0,k1){const us=await Promise.all([k0,k1].map(x=>db.get(x))),team=us.map(u=>{tick(u.data);return u.data.team.map(id=>u.data.sheep.find(x=>x.id==id))});
