@@ -41,7 +41,7 @@ const grantSp=d=>{d.spl=d.spl||[];const out=[];for(const x of G.SPECIALS)if(!x.h
 const view=d=>({...d,calc:{rate:G.rate(d),cap:G.cap(d),price:G.price(d),slots:G.slots(d)}});
 const A={};
 A.state=async()=>({});
-A.sell=async d=>{const c=Math.floor(d.wool*G.price(d));d.coins+=c;d.wool=0;prog(d,'sell');addXp(d,Math.min(60,Math.floor(Math.sqrt(c)/3)));return{gain:c}};
+A.sell=async d=>{const c=Math.floor(d.wool*G.price(d));d.coins+=c;d.wool=0;prog(d,'sell');addXp(d,c>=25?Math.min(60,Math.floor(Math.sqrt(c)/3)):0);return{gain:c}};
 A.hatch=async(d,b)=>{const ei=b.egg|0,e=G.EGG[ei],n=b.n==10?10:1;if(!e)return{err:'No such egg'};if(G.farmLv(d.fxp).lv<(e.lv|0))return{err:'Reach farm level '+e.lv+' to use this egg'};if(d.coins<e.cost*n)return{err:'Not enough coins'};
  if(d.sheep.length+n>G.slots(d))return{err:n>1?'You need '+n+' free pasture slots':'Pasture full! Release a sheep or upgrade the Pasture.'};
  d.coins-=e.cost*n;d.dex=d.dex||[];const out=[];for(let i=0;i<n;i++){const x=G.roll(ei);d.sheep.push(x);d.hatched++;d.best=Math.max(d.best||0,x.r);const k=(x.form|0)+'-'+x.r;if(!d.dex.includes(k))d.dex.push(k);out.push(x)}
@@ -101,7 +101,7 @@ function finish(d,b){if(b.paid)return;b.paid=1;const st=b.stage|0;addXp(d,b.win?
  if(b.win){prog(d,'win');d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),1));
   if(st){const first=st>(d.adv|0),c=Math.round(60*st*(1+st/10)*(first?1:.25));d.wins++;d.coins+=c;b.reward={coins:c,rating:0,first};prog(d,'adv');
    if(first)d.adv=st}
-  else{const pw=b.u.filter(x=>x.side==1).reduce((a,x)=>a+x.max+x.atk*4,0),c=Math.round(20+pw/12);d.wins++;d.rating+=20;d.coins+=c;b.reward={coins:c,rating:20}}}
+  else{const pw=b.u.filter(x=>x.side==1).reduce((a,x)=>a+x.max+x.atk*4,0),c=Math.round((20+pw/12)*(b.oname=='Farmer Bot'?.6:1));d.wins++;d.rating+=20;d.coins+=c;b.reward={coins:c,rating:20}}}
  else{if(st){d.coins+=5;b.reward={coins:5,rating:0}}else{d.losses++;d.rating=Math.max(0,d.rating-12);d.coins+=5;b.reward={coins:5,rating:-12}}d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),.5))}}
 A.claimq=async(d,b)=>{const x=d.q&&d.q.l[b.i|0];if(!x||x.c||x.h<x.n)return{err:'Not ready yet'};x.c=1;d.coins+=x.r;addXp(d,40);return{gain:x.r}};
 A.golden=async d=>{const now=Date.now();if(now-(d.gt||0)<30000)return{err:'Too soon'};d.gt=now;const c=Math.max(25,Math.round(G.rate(d)*60));d.coins+=c;d.gc=(d.gc|0)+1;prog(d,'golden');addXp(d,8);return{gain:c}};
@@ -112,7 +112,7 @@ A.bstart=async(d,body,q)=>{const st=(body&&body.stage)|0,me=d.team.map(id=>d.she
   const oc=await db.cget(w.a==c.key?w.b:w.a),cand=[];for(const mk of oc.members){const u=await db.get(mk);if(u&&u.data.team&&u.data.team.length==3)cand.push(u.data)}if(!cand.length)return{err:'No enemy defenders available'};
   const od=pick(cand);opp=od.team.map(id=>od.sheep.find(s=>s.id==id)).filter(Boolean);if(opp.length<3)return{err:'No enemy defenders available'};oname=od.name+' ('+oc.name+')';war={id:w.id};w.used[q.n]=-1;await db.cput('war:'+w.id,w)}
  else if(st){if(st>30||st>(d.adv|0)+1)return{err:'Beat the earlier stages first'};if(G.farmLv(d.fxp).lv<G.stageLv(st))return{err:'Reach farm level '+G.stageLv(st)+' to fight this stage'};oname=G.STAGE_NAMES[st-1];
-  opp=[0,1,2].map(k=>{const r=Math.min(6,Math.floor(st/5)+(k==2&&st%5==0?1:0)),s=G.roll(0,Math.random,r);s.lv=Math.min(20,1+Math.floor(st*.7));s.evo=s.lv>=12?2:s.lv>=5?1:0;return s})}
+  opp=[0,1,2].map(k=>{const base=st/6.5,r=Math.min(6,Math.floor(base)+(Math.random()<base%1?1:0)+(k==2&&st%5==0?1:0)),s=G.roll(0,Math.random,r);s.lv=Math.min(20,1+Math.floor(st*.7));s.evo=s.lv>=12?2:s.lv>=5?1:0;return s})}
  else{const all=(await db.all()).filter(x=>x.name!=q.n&&x.data.team&&x.data.team.length==3).map(x=>({x,t:x.data.team.map(id=>x.data.sheep.find(s=>s.id==id)).filter(Boolean)})).filter(o=>o.t.length==3&&pw(o.t)<=mine*1.05)
    .sort((a,c)=>Math.abs(a.x.data.rating-d.rating)-Math.abs(c.x.data.rating-d.rating));
   o=all.length&&Math.random()<.7?pick(all.slice(0,4)):null;oname=o?o.x.data.name:'Farmer Bot';
