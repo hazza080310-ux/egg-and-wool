@@ -53,7 +53,7 @@ A.release=async(d,b)=>{const i=d.sheep.findIndex(s=>s.id==b.id);if(i<0)return{er
  const[s]=d.sheep.splice(i,1);d.coins+=G.RAR[s.r].v;d.team=d.team.filter(x=>x!=s.id);tick(d);return{}};
 A.prestige=async d=>{if(d.sheep.filter(s=>s.r>=6&&!s.sp).length<3)return{err:'You need 3 hatched Celestial sheep to prestige'};const duck=d.sheep.find(s=>s.sp=='duck');d.pr=(d.pr|0)+1;
  const starters=[0,1,2].map(()=>{let s;do s=G.roll(0);while(s.r>0);return s});d.sheep=[...(duck?[duck]:[]),...starters];if(duck){duck.lv=Math.min(20,duck.lv+3);duck.xp=(duck.lv-1)*1.5;duck.hatchAt=Date.now()+864e5}
- d.coins=30;d.fxp=0;d.q=null;d.streak=0;d.w0=d.wins;d.wool=0;d.b={barn:0,shed:0,pasture:0,market:0,auto:0};d.team=[];d.adv=0;d.spl=duck?['duck']:[];d.hatched=0;d.gc=0;d.best=0;d.t=Date.now();tick(d);return{prestiged:d.pr}};
+ d.coins=30;d.fxp=0;d.q=null;d.streak=0;d.w0=d.wins;d.wool=0;d.b={barn:0,shed:0,pasture:0,market:0,auto:0};d.team=[];d.adv=0;d.spl=duck?['duck']:[];d.hstash=[];d.hatched=0;d.gc=0;d.best=0;d.t=Date.now();tick(d);return{prestiged:d.pr}};
 A.tutdone=async d=>{d.tut=1;return{}};
 A.train=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};if(G.isEgg(s))return{err:'That sheep is still in its egg'};if(s.lv>=20)return{err:'Max level'};const c=G.trainCost(s);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;s.lv++;s.xp=(s.lv-1)*1.5;prog(d,'train');addXp(d,6);return{sheep:s}};
 A.daily=async d=>{const now=Date.now();if(now-(d.daily||0)<20*36e5)return{err:'Already claimed today'};d.streak=now-(d.daily||0)<48*36e5?(d.streak|0)+1:1;const c=80+30*Math.min(d.streak,10);d.coins+=c;d.daily=now;addXp(d,15);return{gain:c}};
@@ -130,7 +130,7 @@ async function mkMatch(k0,k1){const us=await Promise.all([k0,k1].map(x=>db.get(x
  applyAura(b);advance(b);flush(b);const id=Math.random().toString(36).slice(2);LM.set(id,m);LU.set(k0,id);LU.set(k1,id);return m}
 async function finishLive(m){const b=m.b;if(b.paid)return;b.paid=1;b.reward=[null,null];
  for(const s of[0,1]){const u=await db.get(m.keys[s]);if(!u)continue;const d=u.data,win=(b.win?0:1)==s,c=win?60:15;addXp(d,win?20:6);if(win)prog(d,'win');d.wins+=win?1:0;d.losses+=win?0:1;d.rating=Math.max(0,d.rating+(win?25:-15));d.coins+=c;
-  m.team[s].forEach(id=>gain(d.sheep.find(x=>x.id==id),win?1:.5));b.reward[s]={coins:c,rating:win?25:-15};if(win&&d.clan){const cc=await db.cget(d.clan);if(cc){cc.bw=(cc.bw|0)+1;calcR(cc);await db.cput(cc.key,cc)}}checkAch(d);await db.put(m.keys[s],u)}}
+  m.team[s].forEach(id=>gain(d.sheep.find(x=>x.id==id),win?1:.5));b.reward[s]={coins:c,rating:win?25:-15};if(win&&d.clan){const cc=await db.cget(d.clan);if(cc){bumpWin(cc,m.keys[s]);await db.cput(cc.key,cc)}}checkAch(d);await db.put(m.keys[s],u)}}
 const lview=(m,side,since)=>{const b=m.b;return{state:'match',me:side,oname:m.names[1-side],u:vu(b),cur:b.cur,done:b.done,win:b.done?(b.win?0:1)==side:undefined,reward:b.reward&&b.reward[side],ev:b.log.slice(since),n:b.log.length}};
 app.post('/api/live/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.now(),since=q.body.since|0;let m=LM.get(LU.get(k));
  const forfeit=async side=>{m.b.done=true;m.b.win=side==1;m.b.cur=null;await finishLive(m)};
@@ -144,6 +144,12 @@ app.post('/api/live/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.no
  if(!b.done){if(now-m.seen[1-side]>20000)await forfeit(1-side);else if(b.cur!=null&&now-b.turnAt>30000){ai(b,b.cur);advance(b);flush(b);if(b.done)await finishLive(m)}}
  s.json(lview(m,side,since))}));
 // ---- herds (clans) & herd wars ----
+function bumpWin(c,k){const day=Math.floor(Date.now()/864e5);if(c.dday!=day){c.dday=day;c.dw=0;c.dc=[]}c.bw=(c.bw|0)+1;c.dw=(c.dw|0)+1;c.mw=c.mw||{};c.mw[k]=(c.mw[k]|0)+1;calcR(c)}
+// herd sheep only stay in the flock while you are in a herd that has finished their goal
+function syncHerd(d,c){const R=c?(c.reached||[]):[];d.cb=c?G.herdLv(c.pts|0).bonus:0;d.hstash=d.hstash||[];const keep=[];
+ for(const x of d.sheep){const sp=x.sp&&G.SPM[x.sp];if(sp&&sp.herd){const g=G.CLAN_GOALS.find(y=>y.sp==x.sp);if(g&&!R.includes(g.id)){d.hstash.push(x);continue}}keep.push(x)}d.sheep=keep;
+ const st=[];for(const x of d.hstash){const g=G.CLAN_GOALS.find(y=>y.sp==x.sp);if(g&&R.includes(g.id)){if(!d.sheep.some(y=>y.sp==x.sp))d.sheep.push(x)}else if(!st.some(y=>y.sp==x.sp))st.push(x)}d.hstash=st}
+async function syncHerdFor(d,k){if(!(d.clan||d.cb||(d.hstash&&d.hstash.length)||d.sheep.some(x=>x.sp&&G.SPM[x.sp].herd)))return;let c=d.clan?await db.cget(d.clan):null;if(c&&!c.members.includes(k))c=null;syncHerd(d,c)}
 const CK=n=>String(n||'').trim().toLowerCase(),WAR_MS=864e5;
 const calcR=c=>{c.reached=G.CLAN_GOALS.filter(g=>g.pts?(c.pts|0)>=g.pts:g.wars?(c.wins|0)>=g.wars:(c.bw|0)>=g.bw).map(g=>g.id)};
 const fullW=(c,w)=>c.members.every(m=>w.used[m]!==undefined&&w.used[m]!==-1);
@@ -154,31 +160,35 @@ async function endWar(w,cur){if(w.done)return;const ca=await db.cget(w.a),cb=awa
  await db.cput('war:'+w.id,w)}
 async function warDone(d,b,q){const c=d.clan&&await db.cget(d.clan);if(!c||c.warId!=b.war.id)return;const w=await db.cget('war:'+b.war.id);if(!w||w.done||w.used[q.n]!==-1)return;
  w.used[q.n]=b.win?1:0;if(b.win)w.score[w.a==c.key?0:1]++;await db.cput('war:'+w.id,w);await endWar(w,{k:q.n,d})}
-app.post('/api/clan/:a',auth,H(async(q,s)=>{const k=q.n,d=q.u.data,a=q.params.a,b=q.body,now=Date.now(),err=m=>s.json({err:m});let cl=null,c=d.clan?await db.cget(d.clan):null;if(d.clan&&!c)d.clan=null;
- if(c&&!c.members.includes(k)){c=null;d.clan=null}if(c&&!c.mig){c.leader=pick(c.members);c.mig=1;await db.cput(c.key,c)}if(c&&!d.cjoin)d.cjoin=now;
- if(a=='list')return s.json({list:(await db.call()).map(x=>x.data).filter(x=>x.members.length<5).map(x=>({name:x.name,n:x.members.length,wins:x.wins|0,pts:x.pts|0}))});
+app.post('/api/clan/:a',auth,H(async(q,s)=>{const k=q.n,d=q.u.data,a=q.params.a,b=q.body,now=Date.now(),err=m=>s.json({err:m});let cl=null,dly=0,c=d.clan?await db.cget(d.clan):null;if(d.clan&&!c)d.clan=null;
+ if(c&&!c.members.includes(k)){c=null;d.clan=null}if(c&&!c.mig){c.leader=pick(c.members);c.mig=1;await db.cput(c.key,c)}if(c&&!d.cjoin)d.cjoin=now;if(c&&c.dday!=Math.floor(now/864e5)){c.dday=Math.floor(now/864e5);c.dw=0;c.dc=[]}
+ if(a=='list')return s.json({list:(await db.call()).map(x=>x.data).filter(x=>x.members.length<5).map(x=>({name:x.name,n:x.members.length,wins:x.wins|0,pts:x.pts|0,motto:x.motto||'',lv:G.herdLv(x.pts|0).lv}))});
  if(a=='create'){if(c)return err('You are already in a herd');if(G.farmLv(d.fxp).lv<6)return err('Reach farm level 6 to join a herd');const nm=String(b.name||'').trim();if(!/^[A-Za-z0-9_]{3,16}$/.test(nm))return err('Herd name: 3-16 letters/numbers/_');const key=CK(nm);if(key=='warq'||await db.cget(key))return err('That herd name is taken');c={key,name:nm,leader:k,mig:1,members:[k],pts:0,wins:0,bw:0,reached:[],warId:null,srch:0};d.clan=key;d.cjoin=now;await db.cput(key,c)}
  else if(a=='join'){if(c)return err('You are already in a herd');if(G.farmLv(d.fxp).lv<6)return err('Reach farm level 6 to join a herd');const x=await db.cget(CK(b.name));if(!x||!x.members)return err('No such herd');if(x.members.length>=5)return err('That herd is full (5 max)');x.members.push(k);c=x;d.clan=x.key;d.cjoin=now;await db.cput(x.key,x)}
  else if(a=='info'){}
  else if(!c)return err('Join a herd first');
  else if(a=='leave'){c.members=c.members.filter(m=>m!=k);d.clan=null;d.cgoal=[];d.cjoin=0;if(!c.members.length)await db.cdel(c.key);else{if(c.leader==k)c.leader=pick(c.members);await db.cput(c.key,c)}c=null}
- else if(a=='donate'){const n=Math.floor(+b.amt);if(!(n>0)||n>d.coins)return err('Not enough coins');d.coins-=n;c.pts=(c.pts|0)+n;calcR(c);await db.cput(c.key,c)}
+ else if(a=='donate'){const n=Math.floor(+b.amt);if(!(n>0)||n>d.coins)return err('Not enough coins');d.coins-=n;c.pts=(c.pts|0)+n;c.don=c.don||{};c.don[k]=(c.don[k]|0)+n;calcR(c);await db.cput(c.key,c)}
  else if(a=='findwar'){if(c.leader!=k)return err('Only the herd leader can search for a war');if(c.warId)return err('Your herd is already at war');if(c.members.length<2)return err('You need at least 2 members');
   const wq=await db.cget('warq'),oc=wq&&wq.clan&&wq.clan!=c.key&&now-wq.t<WAR_MS?await db.cget(wq.clan):null;
   if(oc&&!oc.warId&&oc.members.length>=2){const id=Math.random().toString(36).slice(2,9);await db.cput('war:'+id,{id,a:oc.key,b:c.key,names:[oc.name,c.name],start:now,end:now+WAR_MS,score:[0,0],used:{},done:false});oc.warId=c.warId=id;oc.srch=c.srch=0;await db.cput(oc.key,oc);await db.cput(c.key,c);await db.cput('warq',{clan:null})}
   else{await db.cput('warq',{clan:c.key,t:now});c.srch=now;await db.cput(c.key,c)}}
  else if(a=='kick'){if(c.leader!=k)return err('Only the herd leader can kick members');const tk=CK(b.key);if(tk==k||!c.members.includes(tk))return err('Pick another member');c.members=c.members.filter(m=>m!=tk);const u=await db.get(tk);if(u){u.data.clan=null;u.data.cgoal=[];u.data.cjoin=0;await db.put(tk,u)}await db.cput(c.key,c)}
- else if(a=='claim'){const g=G.CLAN_GOALS.find(x=>x.id==b.id);if(!g)return err('Unknown goal');calcR(c);if(!c.reached.includes(g.id))return err('Your herd has not reached that goal yet');const sp=G.SPM[g.sp];if(d.sheep.some(y=>y.sp==g.sp))return err('You already have that sheep');
+ else if(a=='claim'){const g=G.CLAN_GOALS.find(x=>x.id==b.id);if(!g)return err('Unknown goal');calcR(c);if(!c.reached.includes(g.id))return err('Your herd has not reached that goal yet');const sp=G.SPM[g.sp];if(d.sheep.some(y=>y.sp==g.sp)||(d.hstash||[]).some(y=>y.sp==g.sp))return err('You already have that sheep');
   if(!d.sheep.some(y=>!y.sp&&y.r>=sp.r))return err('You need a '+G.RAR[sp.r].n+' sheep of your own first');const left=g.hrs-(now-(d.cjoin||now))/36e5;if(left>0)return err('You must be in the herd for '+g.hrs+'h first ('+Math.ceil(left)+'h left)');
   d.sheep.push(G.mkSpecial(g.sp));cl=sp.name}
+ else if(a=='say'){const m=String(b.text||'').trim().slice(0,140);if(!m)return err('Type a message first');c.chat=c.chat||[];c.chat.push({n:d.name,t:now,m});if(c.chat.length>30)c.chat=c.chat.slice(-30);await db.cput(c.key,c)}
+ else if(a=='motto'){if(c.leader!=k)return err('Only the leader can set the motto');c.motto=String(b.text||'').trim().slice(0,40);await db.cput(c.key,c)}
+ else if(a=='promote'){if(c.leader!=k)return err('Only the leader can hand over leadership');const tk=CK(b.key);if(tk==k||!c.members.includes(tk))return err('Pick another member');c.leader=tk;await db.cput(c.key,c)}
+ else if(a=='claimdaily'){if((c.dw|0)<8)return err('Your herd needs 8 battle wins today');c.dc=c.dc||[];if(c.dc.includes(k))return err('You already claimed today\'s reward');c.dc.push(k);dly=Math.max(150,Math.round(G.rate(d)*240));d.coins+=dly;addXp(d,20);await db.cput(c.key,c)}
  else return err('Unknown action');
  let w=null;if(c&&c.warId){w=await db.cget('war:'+c.warId);if(w&&!w.done){await endWar(w,{k,d});c=await db.cget(c.key);w=w.done?null:w}else w=null}
- d.cgoal=c?c.reached||[]:[];const newSp=grantSp(d);await db.put(k,q.u);let out=null;
+ d.cgoal=c?c.reached||[]:[];syncHerd(d,c);const newSp=grantSp(d);await db.put(k,q.u);let out=null;
  if(c){const us=await Promise.all(c.members.map(m=>db.get(m)));let war=null;if(w){const i=w.a==c.key?0:1;war={opp:w.names[1-i],my:w.score[i],their:w.score[1-i],end:w.end,mine:w.used[k]!==undefined}}
-  out={name:c.name,owner:c.leader==k,bw:c.bw|0,wins:c.wins|0,pts:c.pts|0,searching:!!(!c.warId&&c.srch&&now-c.srch<WAR_MS),war,members:us.map((u,i)=>({key:c.members[i],lead:c.members[i]==c.leader,name:u?u.data.name:'?',rating:u?u.data.rating:0,sheep:u?u.data.sheep.length:0,atk:w?w.used[c.members[i]]:undefined}))}}
- s.json({clan:out,newSp,claimed:cl,d:view(d)})}));
-app.post('/api/act/:a',auth,H(async(q,s)=>{const f=A[q.params.a];if(!f)return s.sendStatus(404);const d=q.u.data;tick(d);const l0=G.farmLv(d.fxp).lv;const r=await f(d,q.body,q)||{};
- if(r.err)return s.json({err:r.err,d:view(d)});checkAch(d);const newSp=grantSp(d);if(r.bt&&r.bt.reward&&newSp.length)r.bt.reward.sheep=newSp.join(', ');if(d.clan&&r.bt&&r.bt.done&&r.bt.win){const cc=await db.cget(d.clan);if(cc){cc.bw=(cc.bw|0)+1;calcR(cc);await db.cput(cc.key,cc)}}
+  out={name:c.name,owner:c.leader==k,lv:G.herdLv(c.pts|0),motto:c.motto||'',chat:(c.chat||[]).slice(-20),dw:c.dw|0,dc:(c.dc||[]).includes(k),bw:c.bw|0,wins:c.wins|0,pts:c.pts|0,searching:!!(!c.warId&&c.srch&&now-c.srch<WAR_MS),war,members:us.map((u,i)=>({key:c.members[i],lead:c.members[i]==c.leader,name:u?u.data.name:'?',rating:u?u.data.rating:0,sheep:u?u.data.sheep.length:0,don:(c.don||{})[c.members[i]]|0,mw:(c.mw||{})[c.members[i]]|0,atk:w?w.used[c.members[i]]:undefined}))}}
+ s.json({clan:out,newSp,claimed:cl,daily:dly||undefined,d:view(d)})}));
+app.post('/api/act/:a',auth,H(async(q,s)=>{const f=A[q.params.a];if(!f)return s.sendStatus(404);const d=q.u.data;await syncHerdFor(d,q.n);tick(d);const l0=G.farmLv(d.fxp).lv;const r=await f(d,q.body,q)||{};
+ if(r.err)return s.json({err:r.err,d:view(d)});checkAch(d);const newSp=grantSp(d);if(r.bt&&r.bt.reward&&newSp.length)r.bt.reward.sheep=newSp.join(', ');if(d.clan&&r.bt&&r.bt.done&&r.bt.win){const cc=await db.cget(d.clan);if(cc){bumpWin(cc,q.n);await db.cput(cc.key,cc)}}
  await db.put(q.n,q.u);const l1=G.farmLv(d.fxp).lv;s.json({...r,d:view(d),newSp,flv:l1>l0?l1:undefined})}));
 app.get('/api/board',H(async(q,s)=>{s.json((await db.all()).map(x=>({name:x.data.name,rating:x.data.rating,wins:x.data.wins,sheep:x.data.sheep.length,best:x.data.best||0})).sort((a,b)=>b.rating-a.rating).slice(0,25))}));
 app.get('/api/farm/:n',H(async(q,s)=>{const u=await db.get(q.params.n.toLowerCase());if(!u)return s.sendStatus(404);const d=u.data;s.json({name:d.name,rating:d.rating,sheep:d.sheep.slice().sort((a,b)=>b.r-a.r).slice(0,30)})}));
