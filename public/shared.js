@@ -21,8 +21,9 @@ const moves=s=>{const m=ROLES[s.role].mv.slice(0,2+(s.evo|0));if(s.r>=2)m.push(E
 function stats(s){const m=RAR[s.r].m*(.55+.09*(s.lv-1))*(1+.15*(s.evo|0));let[hp,atk,def,spd]=ROLES[s.role].s.map(x=>x*m);const t=s.trait;if(t=='sturdy')hp*=1.25;if(t=='sparky')atk*=1.2;if(t=='speedy')spd*=1.3;if(t=='dozy')def*=1.3;if(t=='chonky'){hp*=1.4;spd*=.8}if(t=='brawny'){atk*=1.1;hp*=1.1}if(t=='prime')hp*=.9;return{hp:Math.round(hp),atk:Math.round(atk),def:Math.round(def),spd:Math.round(spd)}}
 const sheepRate=s=>(1+.25*(s.evo|0))*RAR[s.r].r*(s.trait=='fluffy'?1.5:s.trait=='dozy'?.7:s.trait=='prime'?2:1);
 const isEgg=s=>s.hatchAt>Date.now(),bcap=lv=>Math.min(10,1+Math.floor(lv/2)),stageLv=st=>Math.ceil(st/2);
+const herdLv=pts=>{const T=[1e5,5e5,2e6,8e6,25e6];let lv=0;while(lv<5&&pts>=T[lv])lv++;return{lv,bonus:.03*lv,next:T[lv]}};
 function farmLv(xp){xp=xp|0;let L=1,need=100;while(xp>=need&&L<99){xp-=need;L++;need=Math.round(need*1.25)}return{lv:L,into:xp,need}}
-function rate(d){const L=d.sheep.filter(s=>!isEgg(s));let a=0,wx=0;for(const s of L){if(s.trait=='mentor')a+=.04;if(s.sp){wx+=SPM[s.sp].fx.woolx||0;if(s.sp=='duck')wx+=.15*(d.pr|0)}}let r=0;for(const s of L)r+=sheepRate(s);return r*(1+wx)*(1+(d.pr|0))*(1+Math.min(a,1))*(1+.25*d.b.shed)}
+function rate(d){const L=d.sheep.filter(s=>!isEgg(s));let a=0,wx=0;for(const s of L){if(s.trait=='mentor')a+=.04;if(s.sp){wx+=SPM[s.sp].fx.woolx||0;if(s.sp=='duck')wx+=.15*(d.pr|0)}}let r=0;for(const s of L)r+=sheepRate(s);return r*(1+wx)*(1+(d.pr|0))*(1+(d.cb||0))*(1+Math.min(a,1))*(1+.25*d.b.shed)}
 const cap=d=>Math.floor(250*Math.pow(1.8,d.b.barn)),slots=d=>6+3*d.b.pasture,bcost=(b,l)=>Math.round(b[3]*Math.pow(1.9,l));
 function price(d){let g=0;for(const s of d.sheep.filter(s=>!isEgg(s))){if(s.trait=='golden')g+=.03;if(s.sp)g+=SPM[s.sp].fx.coinx||0}return(1+.1*d.b.market)*(1+g)}
 const FORMS=['Classic','Alien','Cloud','Crystal','Robo','Ghost','Magma','Jelly','Bloom','Nova','Duck'];const FC=['#ddd','#6fd07a','#bfe3ff','#7fe0ff','#9aa6b4','#eef1ff','#ff7a1a','#7ad7ff','#6fcf6f','#ffd34d'],FI=['','👽','☁️','💎','🤖','👻','🌋','🫧','🌸','⭐'];
@@ -49,5 +50,5 @@ const SPECIALS=[
 {id:'lambert',name:'Legend Lambert',r:5,el:3,role:3,form:9,hue:55,ex:['crown','halo','stars'],heads:1,face:2,wool:3,pas:'haste',fx:{woolx:.2,coinx:.1},mv:['Legendary Leap','dmg',2.4,3],how:'Herd goal: win 1,000 battles together',cond:()=>false,herd:true}];
 const CLAN_GOALS=[{id:'g4',wars:1,sp:'banner',hrs:24},{id:'g6',bw:100,sp:'vince',hrs:24},{id:'g1',pts:3000000,sp:'shepherd',hrs:24},{id:'g3',wars:5,sp:'warlord',hrs:48},{id:'g5',wars:15,sp:'general',hrs:48},{id:'g2',pts:50000000,sp:'alpha',hrs:48},{id:'g7',bw:1000,sp:'lambert',hrs:48}];
 const SPM=Object.fromEntries(SPECIALS.map(x=>[x.id,x])),mkSpecial=id=>{const x=SPM[id];return{id:'sp_'+id,sp:id,r:x.r,heads:x.heads,ex:x.ex,wool:x.wool,face:x.face,hue:x.hue,el:x.el,role:x.role,trait:'special',form:x.form,name:x.name,lv:1,xp:0,evo:0}};
-const G={isEgg,bcap,stageLv,farmLv,CLAN_GOALS,PAS,SPECIALS,SPM,mkSpecial,ELM,elm,matchup,moves,ELI,STAGE_NAMES,QUESTS,trainCost,FORMS,evoLv,STAGES,evoCost,RAR,EGG,TR,ROLES,EL,ELC,EX,B,ACH,roll,stats,sheepRate,rate,cap,slots,bcost,price};
+const G={herdLv,isEgg,bcap,stageLv,farmLv,CLAN_GOALS,PAS,SPECIALS,SPM,mkSpecial,ELM,elm,matchup,moves,ELI,STAGE_NAMES,QUESTS,trainCost,FORMS,evoLv,STAGES,evoCost,RAR,EGG,TR,ROLES,EL,ELC,EX,B,ACH,roll,stats,sheepRate,rate,cap,slots,bcost,price};
 if(typeof module!='undefined')module.exports=G;else g.G=G})(this);
