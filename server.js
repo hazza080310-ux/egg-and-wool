@@ -31,9 +31,19 @@ app.post('/api/login',H(async(q,s)=>{const k=String(q.body.name||'').trim().toLo
 const auth=(q,s,next)=>{(async()=>{const t=q.get('x-token')||'',n=t.split('.')[0],u=n&&await db.get(n);
  if(!u||sign(n,u.hash)!==t)return s.status(401).json({err:'Please log in again'});q.n=n;q.u=u;next()})().catch(()=>s.status(500).json({err:'Server error'}))};
 const away=(d,id)=>(d.ex||[]).some(e=>e.ids.includes(id));
-const addXp=(d,n)=>{d.fxp=(d.fxp|0)+Math.round(n)};
+const addXp=(d,n)=>{d.fxp=(d.fxp|0)+Math.round(n*(1+.06*G.rl(d,'scholar')))};
+// ---- bond, shards, research points ----
+const bond=(d,s,n)=>{if(s&&!G.isEgg(s))s.bd=Math.min(100,(s.bd|0)+n*(1+.25*G.rl(d,'bond')))};
+const giveShards=(d,el,n)=>{d.sh=d.sh||{};d.sh[el]=(d.sh[el]|0)+Math.round(n*(1+.25*G.rl(d,'shards')))};
+const addRp=(d,n)=>{d.rp=(d.rp|0)+n};
+function postBattle(d,b){const win=b.win,els=b.u.filter(x=>x.side==1).map(x=>x.el),st=b.stage|0;
+ d.team.forEach(id=>bond(d,d.sheep.find(x=>x.id==id),win?2:1));
+ if(els.length)giveShards(d,pick(els),win?2:1);
+ if(win&&st&&st>(d.adv|0)){if(els.length)giveShards(d,pick(els),4);addRp(d,3)}else if(win)addRp(d,1)}
 const prog=(d,k,n=1)=>{const x=d.q&&d.q.l.find(y=>y.k==k);if(x)x.h+=n};
-function tick(d){d.dxb=G.dexInfo(d).bonus;d.ex=(d.ex||[]).filter(e=>e.rooms);const day=Math.floor(Date.now()/864e5);if(!d.q||d.q.day!=day){const ks=Object.keys(G.QUESTS).sort(()=>Math.random()-.5).slice(0,3);d.q={day,l:ks.map(k=>({k,n:pick(G.QUESTS[k][1]),h:0,r:Math.max(100,Math.round(G.rate(d)*200)),c:0}))}}
+function tick(d){d.sh=d.sh||{};d.rs=d.rs||{};d.rq=d.rq||[];const tn=Date.now();d.rq=d.rq.filter(x=>{if(x.end<=tn){d.rs[x.id]=Math.max(d.rs[x.id]|0,x.to);return false}return true});
+ const lcp=G.lvCap(d);for(const s of d.sheep)s.cap=lcp;
+ d.dxb=G.dexInfo(d).bonus;d.ex=(d.ex||[]).filter(e=>e.rooms);const day=Math.floor(Date.now()/864e5);if(!d.q||d.q.day!=day){const ks=Object.keys(G.QUESTS).sort(()=>Math.random()-.5).slice(0,3);d.q={day,l:ks.map(k=>({k,n:pick(G.QUESTS[k][1]),h:0,r:Math.max(100,Math.round(G.rate(d)*200)),c:0}))}}
  const now=Date.now(),dt=Math.min(90,Math.max(0,(now-d.t)/1000));d.t=now;d.wool+=G.rate(d)*dt;const c=G.cap(d);
  if(d.wool>c)d.wool=c
  d.team=d.team.filter(id=>d.sheep.some(s=>s.id==id&&!G.isEgg(s)&&!away(d,s.id)));for(const s of d.sheep.filter(s=>!G.isEgg(s)&&!away(d,s.id)).sort((a,b)=>b.r-a.r))if(d.team.length<3&&!d.team.includes(s.id))d.team.push(s.id)}
@@ -45,13 +55,13 @@ A.state=async()=>({});
 A.sell=async d=>{const c=Math.floor(d.wool*G.price(d));d.coins+=c;d.wool=0;prog(d,'sell');addXp(d,c>=25?Math.min(60,Math.floor(Math.sqrt(c)/3)):0);return{gain:c}};
 A.hatch=async(d,b)=>{const ei=b.egg|0,e=G.EGG[ei],n=b.n==10?10:1;if(!e)return{err:'No such egg'};if(G.farmLv(d.fxp).lv<(e.lv|0))return{err:'Reach farm level '+e.lv+' to use this egg'};if(d.coins<e.cost*n)return{err:'Not enough coins'};
  if(d.sheep.length+n>G.slots(d))return{err:n>1?'You need '+n+' free pasture slots':'Pasture full! Release a sheep or upgrade the Pasture.'};
- d.coins-=e.cost*n;d.dex=d.dex||[];let nd=0;const out=[];for(let i=0;i<n;i++){const x=G.roll(ei);d.sheep.push(x);d.hatched++;d.best=Math.max(d.best||0,x.r);const k=(x.form|0)+'-'+x.r;if(!d.dex.includes(k)){d.dex.push(k);nd++}out.push(x)}
+ d.coins-=e.cost*n;d.dex=d.dex||[];let nd=0;const out=[];for(let i=0;i<n;i++){const x=G.roll(ei);d.sheep.push(x);d.hatched++;d.best=Math.max(d.best||0,x.r);const k=(x.form|0)+'-'+x.r;if(!d.dex.includes(k)){d.dex.push(k);nd++;addRp(d,2)}out.push(x)}
  prog(d,'hatch',n);addXp(d,n*Math.round(4+Math.log10(e.cost)*4));addXp(d,nd*8);return{sheep:out[n-1],batch:out,newDex:nd}};
 A.upgrade=async(d,b)=>{const x=G.B.find(y=>y[0]==b.b);if(!x)return{err:'?'};const l=d.b[x[0]];if(l>=10)return{err:'Max level'};if(l>=G.bcap(G.farmLv(d.fxp).lv))return{err:'Reach farm level '+Math.max(1,2*l)+' to upgrade this further'};
  const c=G.bcost(x,l);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;d.b[x[0]]++;addXp(d,25);return{}};
 A.team=async(d,b)=>{const ids=[...new Set(b.ids||[])];if(ids.length!=3||!ids.every(i=>d.sheep.some(s=>s.id==i&&!G.isEgg(s)&&!away(d,i))))return{err:'Pick 3 different sheep'};d.team=ids;return{}};
 A.release=async(d,b)=>{const i=d.sheep.findIndex(s=>s.id==b.id);if(i<0)return{err:'?'};if(d.sheep[i].sp)return{err:'Special sheep cannot be released'};if(d.sheep.length<=3)return{err:'Keep at least 3 sheep'};
- const[s]=d.sheep.splice(i,1);d.coins+=G.RAR[s.r].v;d.team=d.team.filter(x=>x!=s.id);tick(d);return{}};
+ const[s]=d.sheep.splice(i,1);d.coins+=G.RAR[s.r].v;giveShards(d,s.el,G.relShards(s));d.team=d.team.filter(x=>x!=s.id);tick(d);return{}};
 A.prestige=async d=>{if(d.sheep.filter(s=>s.r>=6&&!s.sp).length<3)return{err:'You need 3 hatched Celestial sheep to prestige'};const duck=d.sheep.find(s=>s.sp=='duck');d.pr=(d.pr|0)+1;
  const starters=[0,1,2].map(()=>{let s;do s=G.roll(0);while(s.r>0);return s});d.sheep=[...(duck?[duck]:[]),...starters];if(duck){duck.lv=Math.min(20,duck.lv+3);duck.xp=(duck.lv-1)*1.5;duck.hatchAt=Date.now()+864e5}
  d.coins=30;d.fxp=0;d.q=null;d.streak=0;d.w0=d.wins;d.wool=0;d.b={barn:0,shed:0,pasture:0,market:0,auto:0};d.team=[];d.adv=0;d.spl=duck?['duck']:[];d.hstash=[];d.ex=[];d.hatched=0;d.gc=0;d.best=0;d.t=Date.now();tick(d);return{prestiged:d.pr}};
@@ -63,7 +73,7 @@ A.race=async(d,b)=>{const now=Date.now();if(now-(d.rcd||0)<30000)return{err:'You
  const mk=(g,me)=>{const sc=G.stats(g).spd*mod(g.el)*(.85+Math.random()*.3);return{name:g.name,g,time:Math.max(5,Math.min(13,8*Math.sqrt(30/sc))),me}};
  const ents=[mk(s,1)];for(let i=0;i<5;i++){const g=G.roll(0,Math.random,Math.max(0,Math.min(6,s.r+Math.floor(Math.random()*3)-1)));g.lv=Math.max(1,Math.min(20,s.lv+Math.floor(Math.random()*5)-2));g.evo=Math.max(0,Math.min(2,(s.evo|0)+Math.floor(Math.random()*3)-1));ents.push(mk(g,0))}
  ents.sort((a,c)=>a.time-c.time);const place=ents.findIndex(x=>x.me)+1,xp=[8,5,4,3,2,1][place-1],coins=Math.round(Math.max(10,G.rate(d)*8)*[3,2,1.5,1,.6,.4][place-1]);
- d.rcd=now;d.rt=Math.floor(Math.random()*7);d.rn=(d.rn|0)+1;d.coins+=coins;addXp(d,xp);if(place==1)d.rw=(d.rw|0)+1;prog(d,'race');
+ d.rcd=now;d.rt=Math.floor(Math.random()*7);d.rn=(d.rn|0)+1;d.coins+=coins;addXp(d,xp);if(place==1)d.rw=(d.rw|0)+1;prog(d,'race');bond(d,s,2);giveShards(d,tr.el,place<=3?2:1);addRp(d,place==1?2:place<=3?1:0);
  let chest=null;if(d.rn%5==0){const cc=Math.round(Math.max(40,G.rate(d)*30));d.coins+=cc;addXp(d,15);chest={xp:15,coins:cc}}
  return{race:{track:tr,ents,place,xp,coins,chest,next:5-(d.rn%5)}}};
 // ---- ruin expeditions (clear rooms of enemy sheep) ----
@@ -78,13 +88,13 @@ A.expstart=async(d,b)=>{const R=G.RUINS.find(x=>x.id==b.k);if(!R)return{err:'?'}
 A.expretreat=async(d,b)=>{const i=b.i|0;if(!d.ex||!d.ex[i])return{err:'?'};d.ex.splice(i,1);return{}};
 A.expclear=async(d,b)=>{const i=b.i|0,e=d.ex&&d.ex[i];if(!e)return{err:'?'};if(Date.now()<e.arrive)return{err:'Your party is still travelling'};const R=G.RUINS.find(x=>x.id==e.k),room=e.rooms.find(r=>!r.c);if(!room)return{err:'Nothing left to clear'};
  const flv=G.farmLv(d.fxp).lv,party=e.ids.map(id=>d.sheep.find(s=>s.id==id)).filter(Boolean),xpb=Math.round(R.xp*(1+room.i*.04)),cb=Math.round(R.c*10*(1+flv*.15));
- if(room.kind=='loot'){room.c=1;const c=Math.round(cb*1.5),xp=Math.round(xpb*.8);d.coins+=c;addXp(d,xp);e.tot.xp+=xp;e.tot.coins+=c;prog(d,'exp');return{room:{kind:'loot',xp,coins:c}}}
+ if(room.kind=='loot'){room.c=1;const c=Math.round(cb*1.5),xp=Math.round(xpb*.8);d.coins+=c;addXp(d,xp);e.tot.xp+=xp;e.tot.coins+=c;prog(d,'exp');addRp(d,1);return{room:{kind:'loot',xp,coins:c}}}
  if(room.kind=='rest'){room.c=1;for(const id of e.ids)if(e.hp[id]>0)e.hp[id]=Math.min(1,e.hp[id]+.4);return{room:{kind:'rest'}}}
  const mine=party.filter(s=>(e.hp[s.id]??1)>0),boss=room.kind=='boss';
  const bt={u:[...mine.map(s=>{const u=unit(s,0);u.hp=Math.max(1,Math.round(u.max*e.hp[s.id]));return u}),...room.foes.map(s=>{const u=unit(s,1);const fm=R.lv>=11?.76:.85;u.max=u.hp=Math.round(u.max*fm);u.atk=Math.round(u.atk*fm);return u})],oname:R.n+' · room '+(room.i+1)+(boss?' (boss)':''),q:[],cur:null,done:false,ev:[],pvp:true,dumb:false};
  bt.init=bt.u.map(u=>u.hp);applyAura(bt);advance(bt);let g=0;while(!bt.done&&g++<500){ai(bt,bt.cur);bt.cur=null;advance(bt)}
  for(const s of mine){const u=bt.u.find(x=>x.side==0&&x.g.id==s.id);e.hp[s.id]=u&&u.hp>0?u.hp/u.max:0}
- if(bt.win){room.c=1;const xp=xpb*(boss?3:1),c=cb*(boss?3:1);d.coins+=c;addXp(d,xp);e.tot.xp+=xp;e.tot.coins+=c;prog(d,'exp');for(const s of mine)if(e.hp[s.id]>0){gain(s,.3);e.hp[s.id]=Math.min(1,e.hp[s.id]+.2)}
+ if(bt.win){room.c=1;const xp=xpb*(boss?3:1),c=cb*(boss?3:1);d.coins+=c;addXp(d,xp);e.tot.xp+=xp;e.tot.coins+=c;prog(d,'exp');addRp(d,boss?3:1);giveShards(d,pick(R.els),boss?4:1);for(const s of mine)if(e.hp[s.id]>0){bond(d,s,1);gain(s,.3);e.hp[s.id]=Math.min(1,e.hp[s.id]+.2)}
   let msg='';if(boss){const bx=R.xp*6,bc=Math.round(R.c*60*(1+flv*.15));d.coins+=bc;addXp(d,bx);d.ec=(d.ec|0)+1;let fs='';if(Math.random()<.2&&d.sheep.length<G.slots(d)){const x=G.roll(R.egg);addSheep(d,x);fs=' · found a sheep: '+x.name}msg='Ruin cleared! Bonus +'+bx+' XP, +'+fmt0(bc)+' coins'+fs;d.ex.splice(i,1)}
   bt.reward={coins:c,xp,rating:0,msg};return{bt:bv(bt),room:{kind:room.kind}}}
  d.ex.splice(i,1);bt.reward={coins:0,xp:0,rating:0,msg:'Your party was beaten and limped home. Nobody is lost. Try a different party or element mix!'};return{bt:bv(bt),room:{kind:room.kind}}};
@@ -93,11 +103,11 @@ const fmt0=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?(n/1e3).toFixed(1)+'k':String
 A.dexclaim=async(d,b)=>{const ms=G.DEXMS.find(x=>x.n==(b.n|0));if(!ms||ms.egg==null)return{err:'?'};d.dxc=d.dxc||[];if(d.dxc.includes(ms.n))return{err:'Already claimed'};if(G.dexInfo(d).n<ms.n)return{err:'Discover '+ms.n+' entries first'};
  d.dxc.push(ms.n);addXp(d,ms.xp);let sheep=null,coins=0;const x=G.roll(ms.egg);if(d.sheep.length<G.slots(d)){addSheep(d,x);sheep=x}else{coins=G.EGG[ms.egg].cost;d.coins+=coins}return{dexr:{xp:ms.xp,sheep,coins}}};
 A.tutdone=async d=>{d.tut=1;return{}};
-A.train=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};if(G.isEgg(s))return{err:'That sheep is still in its egg'};if(s.lv>=20)return{err:'Max level'};const c=G.trainCost(s);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;s.lv++;s.xp=(s.lv-1)*1.5;prog(d,'train');addXp(d,6);return{sheep:s}};
-A.daily=async d=>{const now=Date.now();if(now-(d.daily||0)<20*36e5)return{err:'Already claimed today'};d.streak=now-(d.daily||0)<48*36e5?(d.streak|0)+1:1;const c=80+30*Math.min(d.streak,10);d.coins+=c;d.daily=now;addXp(d,15);return{gain:c}};
+A.train=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};if(G.isEgg(s))return{err:'That sheep is still in its egg'};if(s.lv>=G.lvCap(d))return{err:'Max level (research Training Grounds to raise the cap)'};const c=G.trainCost(s);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;s.lv++;s.xp=G.xpOf(s.lv);bond(d,s,2);prog(d,'train');addXp(d,6);return{sheep:s}};
+A.daily=async d=>{const now=Date.now();if(now-(d.daily||0)<20*36e5)return{err:'Already claimed today'};d.streak=now-(d.daily||0)<48*36e5?(d.streak|0)+1:1;const c=80+30*Math.min(d.streak,10);d.coins+=c;d.daily=now;addXp(d,15);addRp(d,2);return{gain:c}};
 // ---- battles ----
 const BT=new Map();
-const unit=(s,side)=>{const st=G.stats(s),p=s.sp?G.SPM[s.sp].pas:null,u={side,name:s.name,role:s.role,el:s.el,g:s,hp:st.hp,max:st.hp,atk:Math.round(st.atk*(p=='mighty'?1.3:1)),def:st.def,spd:Math.round(st.spd*(p=='haste'?1.5:1)),cds:[0,0,0,0,0,0,0,0],burn:0,mv:G.moves(s),sh:0,shd:{},stun:0,trait:s.trait,pas:p};if(p=='bulwark')addSh(u,'Bulwark',20);return u};
+const unit=(s,side)=>{const st=G.stats(s),p=s.sp?G.SPM[s.sp].pas:null,u={side,name:s.name,role:s.role,el:s.el,g:s,hp:st.hp,max:st.hp,atk:Math.round(st.atk*(p=='mighty'?1.3:1)),def:st.def,spd:Math.round(st.spd*(p=='haste'?1.5:1)),cds:[0,0,0,0,0,0,0,0,0,0],burn:0,mv:G.moves(s),sh:0,shd:{},stun:0,trait:s.trait,pas:p};if(p=='bulwark')addSh(u,'Bulwark',20);return u};
 const elm=G.elm;
 const E=(b,m,a,to,v,k)=>b.ev.push({m,a,to:to||[],v,k,hp:b.u.map(x=>x.hp),sh:b.u.map(x=>x.sh)});
 function hit(u,x,mult){const e=elm(u.el,x.el),crit=u.trait=='lucky'&&Math.random()<.2;
@@ -126,25 +136,38 @@ function advance(b){for(let g=0;g<300;g++){b.u.forEach((x,k)=>{if(x.hp<=0&&x.pas
  if(!al(0)||!al(1)){b.done=true;b.win=al(0)?true:al(1)?false:Math.random()<.5;b.cur=null;return}
  if(!b.q.length){b.q=b.u.map((u,i)=>i).filter(i=>b.u[i].hp>0).sort((x,y)=>b.u[y].spd-b.u[x].spd);b.round=(b.round|0)+1;
   if(b.round>12){b.u.forEach(x=>{if(x.hp>0)x.hp=Math.max(0,x.hp-Math.ceil(x.max*.05*(b.round-12)))});E(b,'⛈ A storm rolls in and soaks everyone!',null,b.u.map((x,i)=>i),0,'d');continue}}
- const i=b.q.shift(),u=b.u[i];if(u.hp<=0)continue;for(let k=0;k<8;k++)if(u.cds[k]>0)u.cds[k]--;
+ const i=b.q.shift(),u=b.u[i];if(u.hp<=0)continue;for(let k=0;k<10;k++)if(u.cds[k]>0)u.cds[k]--;
  if(u.burn>0){const dm=Math.max(1,Math.ceil(u.max*.06));u.burn--;u.hp=Math.max(0,u.hp-dm);E(b,`${u.name} burns for ${dm}!`,null,[i],dm,'d');if(u.hp<=0)continue}
  if(u.pas=='regen'&&u.hp<u.max){const h=Math.ceil(u.max*.06);u.hp=Math.min(u.max,u.hp+h);E(b,`${u.name} regenerates ${h} HP`,i,[i],h,'h')}
  if(u.stun){u.stun=0;E(b,`${u.name} is too dizzy to move!`,i,[],0,'x');continue}
  if(b.pvp||u.side==0){b.cur=i;b.turnAt=Date.now();return}ai(b,i)}}
 const vu=b=>b.u.map(({name,role,el,g,hp,max,cds,sh,stun,side,burn})=>({name,role,el,g,hp,max,cds,sh,stun,side,burn}));
 const bv=b=>{const ev=b.ev;b.ev=[];return{init:b.init,u:vu(b),cur:b.cur,done:b.done,win:b.win,oname:b.oname,reward:b.reward,ev}};
-const gain=(s,x)=>{if(s&&s.lv<20){s.xp+=x;s.lv=Math.min(20,1+Math.floor(s.xp/1.5))}};
-function finish(d,b){if(b.paid)return;b.paid=1;const st=b.stage|0;addXp(d,b.win?(st?(st>(d.adv|0)?40:10):b.war?15:12):4);
+const gain=(s,x)=>{const cp=(s&&s.cap)||20;if(s&&s.lv<cp){s.xp+=x;s.lv=G.lvOf(s.xp,cp)}};
+function finish(d,b){if(b.paid)return;b.paid=1;postBattle(d,b);const st=b.stage|0;addXp(d,b.win?(st?(st>(d.adv|0)?40:10):b.war?15:12):4);
  if(b.war){const c=b.win?100:20;d.coins+=c;b.reward={coins:c,rating:0,war:1};if(b.win)prog(d,'win');d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),b.win?1:.5));return}
  if(b.win){prog(d,'win');d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),1));
   if(st){const first=st>(d.adv|0),c=Math.round(60*st*(1+st/10)*(first?1:.25));d.wins++;d.coins+=c;b.reward={coins:c,rating:0,first};prog(d,'adv');
    if(first)d.adv=st}
   else{const pw=b.u.filter(x=>x.side==1).reduce((a,x)=>a+x.max+x.atk*4,0),c=Math.round((20+pw/12)*(b.oname=='Farmer Bot'?.6:1));d.wins++;d.rating+=20;d.coins+=c;b.reward={coins:c,rating:20}}}
  else{if(st){d.coins+=5;b.reward={coins:5,rating:0}}else{d.losses++;d.rating=Math.max(0,d.rating-12);d.coins+=5;b.reward={coins:5,rating:-12}}d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),.5))}}
-A.claimq=async(d,b)=>{const x=d.q&&d.q.l[b.i|0];if(!x||x.c||x.h<x.n)return{err:'Not ready yet'};x.c=1;d.coins+=x.r;addXp(d,40);return{gain:x.r}};
-A.golden=async d=>{const now=Date.now();if(now-(d.gt||0)<30000)return{err:'Too soon'};d.gt=now;const c=Math.max(25,Math.round(G.rate(d)*60));d.coins+=c;d.gc=(d.gc|0)+1;prog(d,'golden');addXp(d,8);return{gain:c}};
-A.evolve=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};if(G.isEgg(s))return{err:'That sheep is still in its egg'};const e=s.evo|0;if(e>=2)return{err:'Already fully evolved'};if(s.lv<G.evoLv[e])return{err:'Needs level '+G.evoLv[e]};
- const c=G.evoCost(s);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;s.evo=e+1;addXp(d,40);return{sheep:s}};
+A.claimq=async(d,b)=>{const x=d.q&&d.q.l[b.i|0];if(!x||x.c||x.h<x.n)return{err:'Not ready yet'};x.c=1;d.coins+=x.r;addXp(d,40);addRp(d,2);return{gain:x.r}};
+A.golden=async d=>{const now=Date.now();if(now-(d.gt||0)<30000)return{err:'Too soon'};d.gt=now;const c=Math.max(25,Math.round(G.rate(d)*60));d.coins+=c;d.gc=(d.gc|0)+1;prog(d,'golden');addXp(d,8);addRp(d,1);return{gain:c}};
+A.evolve=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};if(G.isEgg(s))return{err:'That sheep is still in its egg'};const e=s.evo|0;if(e>=G.maxEvo(d))return{err:e>=3?'Already fully evolved':'Research Ascension Rites to unlock the next stage'};if(s.lv<G.evoLv[e])return{err:'Needs level '+G.evoLv[e]};
+ if((s.bd|0)<G.evoBond[e])return{err:'Needs bond '+G.evoBond[e]+' (fight with it, train it, pet it)'};const path=b.path|0;if(e==1&&path!=1&&path!=2)return{err:'Choose an evolution path'};
+ const c=G.evoCost(s),n=G.evoShards(s);d.sh=d.sh||{};if(d.coins<c)return{err:'Not enough coins'};if((d.sh[s.el]|0)<n)return{err:'Needs '+n+' '+G.EL[s.el]+' shards'};
+ d.coins-=c;d.sh[s.el]-=n;s.evo=e+1;if(e==1)s.br=path;addXp(d,40);return{sheep:s}};
+// choose a path for a sheep that was already Ascended before paths existed
+A.path=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s||G.isEgg(s))return{err:'?'};if((s.evo|0)<2||s.br)return{err:'Nothing to choose'};const path=b.path|0;if(path!=1&&path!=2)return{err:'Choose a path'};
+ const o={...s,evo:1},c=Math.round(G.evoCost(o)/2),n=G.evoShards(o);d.sh=d.sh||{};if(d.coins<c)return{err:'Not enough coins'};if((d.sh[s.el]|0)<n)return{err:'Needs '+n+' '+G.EL[s.el]+' shards'};d.coins-=c;d.sh[s.el]-=n;s.br=path;addXp(d,25);return{sheep:s}};
+A.awaken=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s||G.isEgg(s))return{err:'?'};if(s.sp)return{err:'Special sheep cannot be awakened'};const mx=G.awkMax(d);if(!mx)return{err:'Research the Awakening Lab first'};if(s.r>=mx)return{err:'Research more Awakening Lab levels to go past '+G.RAR[s.r].n};
+ if(s.lv<15)return{err:'Needs level 15'};if((s.bd|0)<50)return{err:'Needs bond 50'};const k=G.awkCost(s);d.sh=d.sh||{};if(d.coins<k.c)return{err:'Not enough coins'};if((d.sh[s.el]|0)<k.sh)return{err:'Needs '+k.sh+' '+G.EL[s.el]+' shards'};
+ d.coins-=k.c;d.sh[s.el]-=k.sh;s.r++;s.aw=(s.aw|0)+1;s.bd=Math.round((s.bd|0)*.5);const pool=G.EX.filter(x=>x[1]<=s.r&&!s.ex.includes(x[0])).map(x=>x[0]);if(pool.length)s.ex.push(pick(pool));addXp(d,60+40*s.r);return{sheep:s}};
+A.pet=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s||G.isEgg(s))return{err:'?'};const day=Math.floor(Date.now()/864e5);if(!d.pets||d.pets.day!=day)d.pets={day,ids:[]};if(d.pets.ids.includes(s.id))return{err:'You already petted this sheep today'};if(d.pets.ids.length>=5)return{err:'You can pet 5 sheep a day'};d.pets.ids.push(s.id);bond(d,s,3);return{sheep:s}};
+// ---- research lab ----
+A.resstart=async(d,b)=>{const R=G.RES.find(x=>x.id==b.id);if(!R)return{err:'?'};const lv=G.rl(d,R.id),flv=G.farmLv(d.fxp).lv;if(lv>=R.max)return{err:'Fully researched'};if(flv<R.lv)return{err:'Reach farm level '+R.lv+' first'};
+ if(R.req&&G.rl(d,R.req[0])<R.req[1])return{err:'Needs '+G.RES.find(x=>x.id==R.req[0]).n+' level '+R.req[1]};d.rq=d.rq||[];if(d.rq.some(x=>x.id==R.id))return{err:'Already being researched'};if(d.rq.length>=G.resSlots(flv))return{err:'All research slots are busy'};
+ const rp=R.rp[lv],c=R.c[lv];if((d.rp|0)<rp)return{err:'Needs '+rp+' Research Points'};if(d.coins<c)return{err:'Not enough coins'};d.rp-=rp;d.coins-=c;d.rq.push({id:R.id,to:lv+1,end:Date.now()+R.min[lv]*6e4});addXp(d,10);return{}};
 A.bstart=async(d,body,q)=>{const st=(body&&body.stage)|0,me=d.team.map(id=>d.sheep.find(s=>s.id==id)),pw=ts=>ts.reduce((a,s)=>{const t=G.stats(s);return a+t.hp+t.atk*4},0),mine=pw(me);let opp,oname,o=null,war=null;
  if(body&&body.war){const c=d.clan&&await db.cget(d.clan);if(!c||!c.warId)return{err:'Your herd is not in a war'};const w=await db.cget('war:'+c.warId);if(!w||w.done||Date.now()>w.end)return{err:'The war is over'};if(w.used[q.n]!==undefined)return{err:'You already used your war attack'};
   const oc=await db.cget(w.a==c.key?w.b:w.a),cand=[];for(const mk of oc.members){const u=await db.get(mk);if(u&&u.data.team&&u.data.team.length==3)cand.push(u.data)}if(!cand.length)return{err:'No enemy defenders available'};
@@ -168,7 +191,7 @@ async function mkMatch(k0,k1){const us=await Promise.all([k0,k1].map(x=>db.get(x
  applyAura(b);advance(b);flush(b);const id=Math.random().toString(36).slice(2);LM.set(id,m);LU.set(k0,id);LU.set(k1,id);return m}
 async function finishLive(m){const b=m.b;if(b.paid)return;b.paid=1;b.reward=[null,null];
  for(const s of[0,1]){const u=await db.get(m.keys[s]);if(!u)continue;const d=u.data,win=(b.win?0:1)==s,c=win?60:15;addXp(d,win?20:6);if(win)prog(d,'win');d.wins+=win?1:0;d.losses+=win?0:1;d.rating=Math.max(0,d.rating+(win?25:-15));d.coins+=c;
-  m.team[s].forEach(id=>gain(d.sheep.find(x=>x.id==id),win?1:.5));b.reward[s]={coins:c,rating:win?25:-15};if(win&&d.clan){const cc=await db.cget(d.clan);if(cc){bumpWin(cc,m.keys[s]);await db.cput(cc.key,cc)}}checkAch(d);await db.put(m.keys[s],u)}}
+  m.team[s].forEach(id=>{const sh=d.sheep.find(x=>x.id==id);gain(sh,win?1:.5);bond(d,sh,win?2:1)});addRp(d,win?1:0);b.reward[s]={coins:c,rating:win?25:-15};if(win&&d.clan){const cc=await db.cget(d.clan);if(cc){bumpWin(cc,m.keys[s]);await db.cput(cc.key,cc)}}checkAch(d);await db.put(m.keys[s],u)}}
 const lview=(m,side,since)=>{const b=m.b;return{state:'match',me:side,oname:m.names[1-side],u:vu(b),cur:b.cur,done:b.done,win:b.done?(b.win?0:1)==side:undefined,reward:b.reward&&b.reward[side],ev:b.log.slice(since),n:b.log.length}};
 app.post('/api/live/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.now(),since=q.body.since|0;let m=LM.get(LU.get(k));
  const forfeit=async side=>{m.b.done=true;m.b.win=side==1;m.b.cur=null;await finishLive(m)};
