@@ -81,23 +81,66 @@ function mkFoes(R,depth,boss){const n=boss?3:Math.min(3,1+Math.floor(Math.random
 function genRuin(R){const L=[[4,4,4],[6,6],[3,6,3],[5,7],[4,8],[7,5],[3,3,6],[6,3,3]],rooms=[];
  for(let f=0;f<R.floors;f++){let x=0;for(const w of pick(L)){rooms.push({f,x,w});x+=w}}
  const ord=[];for(let f=0;f<R.floors;f++)ord.push(...rooms.filter(r=>r.f==f).sort((a,b)=>f%2?b.x-a.x:a.x-b.x));
- ord.forEach((r,i)=>{const depth=i/Math.max(1,ord.length-1);r.i=i;r.c=0;r.kind=i==ord.length-1?'boss':i>0&&Math.random()<.18?'loot':i>1&&ord[i-1].kind!='rest'&&Math.random()<.14?'rest':'enemy';if(r.kind=='enemy'||r.kind=='boss')r.foes=mkFoes(R,depth,r.kind=='boss')});return ord}
+ ord.forEach((r,i)=>{const depth=i/Math.max(1,ord.length-1);r.i=i;r.c=0;const pv=i?ord[i-1].kind:'';r.kind=i==ord.length-1?'boss':i==0?'enemy':Math.random()<.13?'loot':pv!='rest'&&Math.random()<.12?'rest':Math.random()<.15?'event':Math.random()<.1?'trap':'enemy';if(r.kind=='event')r.ev=pick(['well','stray','chest']);if(r.kind=='enemy'||r.kind=='boss')r.foes=mkFoes(R,depth,r.kind=='boss')});return ord}
 A.expstart=async(d,b)=>{const R=G.RUINS.find(x=>x.id==b.k);if(!R)return{err:'?'};const flv=G.farmLv(d.fxp).lv;if(flv<R.lv)return{err:'Reach farm level '+R.lv+' first'};d.ex=d.ex||[];if(d.ex.length>=1+(flv>=6?1:0)+(flv>=12?1:0))return{err:'All expedition slots are busy'};
  const ids=[...new Set(b.ids||[])];if(ids.length<1||ids.length>3||!ids.every(i=>d.sheep.some(s=>s.id==i&&!G.isEgg(s)&&!away(d,i))))return{err:'Pick 1 to 3 available sheep'};
- d.ex.push({k:R.id,ids,arrive:Date.now()+R.travel*1000,rooms:genRuin(R),hp:Object.fromEntries(ids.map(i=>[i,1])),tot:{xp:0,coins:0}});d.team=d.team.filter(i=>!ids.includes(i));return{}};
+ d.ex.push({k:R.id,ids,arrive:Date.now()+R.travel*1000,rooms:genRuin(R),hp:Object.fromEntries(ids.map(i=>[i,1])),tot:{xp:0,coins:0},sup:{hay:2,tonic:1}});d.team=d.team.filter(i=>!ids.includes(i));return{}};
 A.expretreat=async(d,b)=>{const i=b.i|0;if(!d.ex||!d.ex[i])return{err:'?'};d.ex.splice(i,1);return{}};
-A.expclear=async(d,b)=>{const i=b.i|0,e=d.ex&&d.ex[i];if(!e)return{err:'?'};if(Date.now()<e.arrive)return{err:'Your party is still travelling'};const R=G.RUINS.find(x=>x.id==e.k),room=e.rooms.find(r=>!r.c);if(!room)return{err:'Nothing left to clear'};
- const flv=G.farmLv(d.fxp).lv,party=e.ids.map(id=>d.sheep.find(s=>s.id==id)).filter(Boolean),xpb=Math.round(R.xp*(1+room.i*.04)),cb=Math.round(R.c*10*(1+flv*.15));
- if(room.kind=='loot'){room.c=1;const c=Math.round(cb*1.5),xp=Math.round(xpb*.8);d.coins+=c;addXp(d,xp);e.tot.xp+=xp;e.tot.coins+=c;prog(d,'exp');addRp(d,1);return{room:{kind:'loot',xp,coins:c}}}
- if(room.kind=='rest'){room.c=1;for(const id of e.ids)if(e.hp[id]>0)e.hp[id]=Math.min(1,e.hp[id]+.4);return{room:{kind:'rest'}}}
- const mine=party.filter(s=>(e.hp[s.id]??1)>0),boss=room.kind=='boss';
- const bt={u:[...mine.map(s=>{const u=unit(s,0);u.hp=Math.max(1,Math.round(u.max*e.hp[s.id]));return u}),...room.foes.map(s=>{const u=unit(s,1);const fm=R.lv>=11?.76:.85;u.max=u.hp=Math.round(u.max*fm);u.atk=Math.round(u.atk*fm);return u})],oname:R.n+' · room '+(room.i+1)+(boss?' (boss)':''),q:[],cur:null,done:false,ev:[],pvp:true,dumb:false};
- bt.init=bt.u.map(u=>u.hp);applyAura(bt);advance(bt);let g=0;while(!bt.done&&g++<500){ai(bt,bt.cur);bt.cur=null;advance(bt)}
- for(const s of mine){const u=bt.u.find(x=>x.side==0&&x.g.id==s.id);e.hp[s.id]=u&&u.hp>0?u.hp/u.max:0}
- if(bt.win){room.c=1;const xp=xpb*(boss?3:1),c=cb*(boss?3:1);d.coins+=c;addXp(d,xp);e.tot.xp+=xp;e.tot.coins+=c;prog(d,'exp');addRp(d,boss?3:1);giveShards(d,pick(R.els),boss?4:1);for(const s of mine)if(e.hp[s.id]>0){bond(d,s,1);gain(s,.3);e.hp[s.id]=Math.min(1,e.hp[s.id]+.2)}
-  let msg='';if(boss){const bx=R.xp*6,bc=Math.round(R.c*60*(1+flv*.15));d.coins+=bc;addXp(d,bx);d.ec=(d.ec|0)+1;let fs='';if(Math.random()<.2&&d.sheep.length<G.slots(d)){const x=G.roll(R.egg);addSheep(d,x);fs=' · found a sheep: '+x.name}msg='Ruin cleared! Bonus +'+bx+' XP, +'+fmt0(bc)+' coins'+fs;d.ex.splice(i,1)}
-  bt.reward={coins:c,xp,rating:0,msg};return{bt:bv(bt),room:{kind:room.kind}}}
- d.ex.splice(i,1);bt.reward={coins:0,xp:0,rating:0,msg:'Your party was beaten and limped home. Nobody is lost. Try a different party or element mix!'};return{bt:bv(bt),room:{kind:room.kind}}};
+const exOpen=(e,r)=>!r.c&&e.rooms.every(x=>x.f>=r.f||x.c)&&(r.kind!='boss'||e.rooms.every(x=>x===r||x.f!=r.f||x.c));
+const exBase=(d,R,room)=>{const flv=G.farmLv(d.fxp).lv;return{flv,xpb:Math.round(R.xp*(1+room.i*.04)),cb:Math.round(R.c*10*(1+flv*.15))}};
+const exParty=(d,e)=>e.ids.map(id=>d.sheep.find(s=>s.id==id)).filter(Boolean);
+const exAlive=(d,e)=>exParty(d,e).filter(s=>(e.hp[s.id]??1)>0);
+const exHurt=(e,ids,f)=>{for(const id of ids)if((e.hp[id]??1)>0)e.hp[id]=Math.max(.05,e.hp[id]-f)};
+const exHeal=(e,ids,f)=>{for(const id of ids)if((e.hp[id]??1)>0)e.hp[id]=Math.min(1,e.hp[id]+f)};
+const exSup=e=>e.sup=e.sup||{hay:1,tonic:0};
+const EXASK={
+ well:{t:'⛲ A glowing well',d:'Pale blue light shimmers in the water. It smells like clean laundry.',o:[['Drink from it','60% heal everyone 35%, 40% a funny tummy (-15% HP)'],['Toss in a coin','Costs some coins. Shards and bond for the whole party'],['Leave it','Walk on']]},
+ stray:{t:'🐑 A lost lamb',d:'A tiny lamb is stuck behind a crate. It looks very hungry.',o:[['Share a Hay Bale','Costs 1 Hay Bale. Party bond up, and the lamb gives you a Spark Tonic'],['Follow it','60% it leads you to a stash, 40% a muddy fall (-10% HP)'],['Shoo it away','Nothing happens']]},
+ chest:{t:'🧰 A suspicious chest',d:'It is breathing. Chests do not usually breathe.',o:[['Open it','65% a big haul, 35% it is a MIMIC and you must fight it for double rewards'],['Poke it carefully','A Trickster in the party makes this safe. Otherwise it is a coin flip'],['Skip it','Walk on']]},
+ trap:{t:'🪤 A spike trap',d:'The floor is covered in pressure plates. One wrong step...',o:[['Disarm it','Better with Tricksters and Zoomy sheep. Success pays coins, failure hurts everyone (-15%)'],['Tank it','Your sturdiest sheep takes the hit (-12% HP). Always safe'],['Dash across','55% great coins, 45% everyone takes -18% HP']]}};
+function exFight(d,e,R,room,q,foes,x){const mine=exAlive(d,e),boss=room.kind=='boss';
+ const b={u:[...mine.map(s=>{const u=unit(s,0);u.hp=Math.max(1,Math.round(u.max*e.hp[s.id]));return u}),...foes.map(s=>{const u=unit(s,1);const fm=R.lv>=11?.76:.85;u.max=u.hp=Math.round(u.max*fm);u.atk=Math.round(u.atk*fm);return u})],oname:R.n+' · room '+(room.i+1)+(boss?' (boss)':x.mimic?' (MIMIC!)':''),q:[],cur:null,done:false,ev:[],dumb:false,exp:{id:e.arrive,r:room.i,mimic:!!x.mimic}};
+ b.init=b.u.map(u=>u.hp);applyAura(b);
+ if(e.buff){e.buff=0;b.u.forEach(u=>{if(u.side==0)u.atk=Math.round(u.atk*1.2)});E(b,'🧪 Spark Tonic! Your sheep hit 20% harder this fight.',null,[],0,'x')}
+ BT.set(q.n,b);e.fight=1;e.at=room.i;advance(b);if(b.done)finish(d,b);return{bt:bv(b)}}
+function finishExp(d,b){const x=b.exp,i=d.ex.findIndex(e=>e.arrive==x.id);if(i<0)return;const e=d.ex[i],R=G.RUINS.find(r=>r.id==e.k),room=e.rooms.find(r=>r.i==x.r);delete e.fight;if(!room)return;
+ const{flv,xpb,cb}=exBase(d,R,room),boss=room.kind=='boss',mu=x.mimic?2:1,mine=b.u.filter(u=>u.side==0);
+ for(const u of mine)e.hp[u.g.id]=u.hp>0?u.hp/u.max:0;
+ if(b.win){room.c=1;const xp=xpb*(boss?3:1)*mu,c=cb*(boss?3:1)*mu;d.coins+=c;addXp(d,xp);e.tot.xp+=xp;e.tot.coins+=c;prog(d,'exp');addRp(d,boss?3:1);giveShards(d,pick(R.els),boss?4:1);
+  for(const u of mine)if(e.hp[u.g.id]>0){bond(d,u.g,1);gain(u.g,.3);e.hp[u.g.id]=Math.min(1,e.hp[u.g.id]+.1)}
+  let msg=x.mimic?'The mimic coughs up its loot!':'';if(!boss&&Math.random()<.25){exSup(e).hay++;msg+=(msg?' ':'')+'Found a Hay Bale 🌾'}
+  if(boss){const bx=R.xp*6,bc=Math.round(R.c*60*(1+flv*.15));d.coins+=bc;addXp(d,bx);d.ec=(d.ec|0)+1;let fs='';if(Math.random()<.2&&d.sheep.length<G.slots(d)){const s=G.roll(R.egg);addSheep(d,s);fs=' · found a sheep: '+s.name}msg='Ruin cleared! Bonus +'+bx+' XP, +'+fmt0(bc)+' coins'+fs;d.ex.splice(i,1)}
+  b.reward={coins:c,xp,rating:0,msg};return}
+ d.ex.splice(i,1);b.reward={coins:0,xp:0,rating:0,msg:'Your party was beaten and limped home. Nobody is lost. Try a different party, element mix, or use supplies earlier!'}}
+A.expclear=async(d,b,q)=>{const i=b.i|0,e=d.ex&&d.ex[i];if(!e)return{err:'?'};if(Date.now()<e.arrive)return{err:'Your party is still travelling'};
+ const R=G.RUINS.find(x=>x.id==e.k);let note='';
+ if(e.fight){const live=BT.get(q.n);if(live&&live.exp&&live.exp.id==e.arrive)BT.delete(q.n);delete e.fight;for(const id of e.ids)if(e.hp[id]>0)e.hp[id]=Math.max(.05,e.hp[id]*.75);note='Your party fled the last fight and lost some health.'}
+ const room=e.rooms.find(r=>r.i==(b.r|0));if(!room||!exOpen(e,room))return{err:'That room is not open yet'};
+ if(!exAlive(d,e).length){d.ex.splice(i,1);return{err:'Your whole party is knocked out. They limp home.'}}
+ const{flv,xpb,cb}=exBase(d,R,room);e.at=room.i;e.pend=null;
+ if(room.kind=='loot'){room.c=1;const c=Math.round(cb*1.5),xp=Math.round(xpb*.8);d.coins+=c;addXp(d,xp);e.tot.xp+=xp;e.tot.coins+=c;prog(d,'exp');addRp(d,1);let s='';if(Math.random()<.5){exSup(e).hay++;s=' and a Hay Bale 🌾'}else if(Math.random()<.3){exSup(e).tonic++;s=' and a Spark Tonic 🧪'}return{note,room:{kind:'loot',xp,coins:c,msg:'🎁 Found supplies: +'+xp+' XP, +'+fmt0(c)+' coins'+s}}}
+ if(room.kind=='rest'){room.c=1;exHeal(e,e.ids,.4);return{note,room:{kind:'rest',msg:'💤 The party rested and recovered some health'}}}
+ if(room.kind=='event'||room.kind=='trap'){e.pend=room.i;const k=room.kind=='trap'?'trap':room.ev,a=EXASK[k];return{note,ask:{r:room.i,k,t:a.t,d:a.d,o:a.o}}}
+ return Object.assign(exFight(d,e,R,room,q,room.foes,{}),{note})};
+A.expchoose=async(d,b,q)=>{const i=b.i|0,e=d.ex&&d.ex[i];if(!e)return{err:'?'};const room=e.rooms.find(r=>r.i==(b.r|0)),c=b.c|0;if(!room||room.c||e.pend!=room.i||!exOpen(e,room))return{err:'Nothing to decide here'};
+ const R=G.RUINS.find(x=>x.id==e.k),{flv,xpb,cb}=exBase(d,R,room),k=room.kind=='trap'?'trap':room.ev,al=exAlive(d,e),ids=e.ids,rnd=Math.random();let msg='';
+ const pay=(m,xpm=1)=>{const co=Math.round(cb*m),xp=Math.round(xpb*xpm);d.coins+=co;addXp(d,xp);e.tot.xp+=xp;e.tot.coins+=co;prog(d,'exp');return{co,xp}};
+ const done=()=>{room.c=1;e.pend=null};
+ if(k=='well'){if(c==0){if(rnd<.6){exHeal(e,ids,.35);msg='⛲ Refreshing! Everyone recovers 35% health.'}else{exHurt(e,ids,.15);msg='⛲ Bleh. Tastes like soap. Everyone loses 15% health.'}}
+  else if(c==1){const cost=Math.round(cb*.6);if(d.coins<cost)return{err:'You need '+fmt0(cost)+' coins'};d.coins-=cost;giveShards(d,pick(R.els),2);for(const s of al)bond(d,s,2);addRp(d,1);msg='⛲ The water glows! +2 shards, bond up, research point.'}else msg='You walk on.';done()}
+ else if(k=='stray'){if(c==0){const sp=exSup(e);if(!sp.hay)return{err:'You have no Hay Bale to share'};sp.hay--;sp.tonic++;for(const s of al)bond(d,s,3);const p=pay(.5);msg='🐑 The lamb nuzzles you and hands over a Spark Tonic 🧪! +'+p.xp+' XP.'}
+  else if(c==1){if(rnd<.6){const p=pay(1.8);exSup(e).hay++;msg='🐑 It led you to a stash! +'+fmt0(p.co)+' coins and a Hay Bale 🌾.'}else{exHurt(e,ids,.1);msg='🐑 Splat! A muddy tumble costs 10% health.'}}else msg='The lamb trots away.';done()}
+ else if(k=='chest'){const trick=al.some(s=>s.role==3);if(c==2){msg='You skip the chest.';done()}
+  else{const safe=c==1&&trick,win=safe||rnd<(c==1?.5:.65);if(win){const p=pay(safe?1.6:2.2);if(Math.random()<.5)exSup(e).hay++;msg=(safe?'🧰 Your Trickster picked the lock safely! ':'🧰 Jackpot! ')+'+'+fmt0(p.co)+' coins.';done()}
+   else{room.foes=mkFoes(R,Math.min(1,room.i/Math.max(1,e.rooms.length-1)+.15),false).slice(0,2);const r=exFight(d,e,R,room,q,room.foes,{mimic:1});r.msg='🧰 It is a MIMIC!';return r}}}
+ else if(k=='trap'){if(c==0){const ch=Math.max(.2,Math.min(.9,.35+.2*al.filter(s=>s.role==3).length+.1*al.filter(s=>s.trait=='speedy').length));if(rnd<ch){const p=pay(1.3);addRp(d,1);msg='🪤 Click! Disarmed. +'+fmt0(p.co)+' coins, +1 research.'}else{exHurt(e,ids,.15);msg='🪤 Snap! Everyone loses 15% health.'}}
+  else if(c==1){const tank=al.slice().sort((a,z)=>G.stats(z).def-G.stats(a).def)[0];if(tank)exHurt(e,[tank.id],.12);const p=pay(.4,.5);msg='🪤 '+(tank?tank.name:'A sheep')+' soaks the spikes (-12% HP). Safe. +'+fmt0(p.co)+' coins.'}
+  else{if(rnd<.55){const p=pay(1.7);msg='🪤 Whoosh! Made it across. +'+fmt0(p.co)+' coins.'}else{exHurt(e,ids,.18);msg='🪤 Ouch! Everyone loses 18% health.'}}done()}
+ return{room:{kind:'event',msg}}};
+A.expuse=async(d,b)=>{const i=b.i|0,e=d.ex&&d.ex[i];if(!e)return{err:'?'};if(e.fight)return{err:'Not during a fight'};const sp=exSup(e);
+ if(b.item=='hay'){if(!sp.hay)return{err:'No Hay Bales left'};if(!e.ids.includes(b.id)||(e.hp[b.id]??1)<=0)return{err:'Pick a sheep that is still up'};if(e.hp[b.id]>=1)return{err:'Already at full health'};sp.hay--;exHeal(e,[b.id],.35);return{room:{kind:'rest',msg:'🌾 Munch munch. Healed 35%.'}}}
+ if(b.item=='tonic'){if(!sp.tonic)return{err:'No Spark Tonics left'};if(e.buff)return{err:'A tonic is already active'};sp.tonic--;e.buff=1;return{room:{kind:'rest',msg:'🧪 Next fight your sheep hit 20% harder.'}}}
+ return{err:'?'}};
 const fmt0=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?(n/1e3).toFixed(1)+'k':String(Math.floor(n));
 // ---- sheepdex rewards ----
 A.dexclaim=async(d,b)=>{const ms=G.DEXMS.find(x=>x.n==(b.n|0));if(!ms||ms.egg==null)return{err:'?'};d.dxc=d.dxc||[];if(d.dxc.includes(ms.n))return{err:'Already claimed'};if(G.dexInfo(d).n<ms.n)return{err:'Discover '+ms.n+' entries first'};
@@ -159,7 +202,7 @@ function advance(b){for(let g=0;g<300;g++){b.u.forEach((x,k)=>{if(x.hp<=0&&x.pas
 const vu=b=>b.u.map(({name,role,el,g,hp,max,cds,sh,stun,side,burn,bd})=>({name,role,el,g,hp,max,cds,sh,stun,side,burn,bd}));
 const bv=b=>{const ev=b.ev;b.ev=[];return{init:b.init,u:vu(b),q:b.q.filter(i=>b.u[i].hp>0),field:b.field,cur:b.cur,done:b.done,win:b.win,oname:b.oname,reward:b.reward,ev}};
 const gain=(s,x)=>{const cp=(s&&s.cap)||20;if(s&&s.lv<cp){s.xp+=x;s.lv=G.lvOf(s.xp,cp)}};
-function finish(d,b){if(b.paid)return;b.paid=1;postBattle(d,b);const st=b.stage|0;addXp(d,b.win?(st?(st>(d.adv|0)?40:10):b.war?15:12):4);
+function finish(d,b){if(b.paid)return;b.paid=1;if(b.exp)return finishExp(d,b);postBattle(d,b);const st=b.stage|0;addXp(d,b.win?(st?(st>(d.adv|0)?40:10):b.war?15:12):4);
  if(b.war){const c=b.win?100:20;d.coins+=c;b.reward={coins:c,rating:0,war:1};if(b.win)prog(d,'win');d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),b.win?1:.5));return}
  if(b.win){prog(d,'win');d.team.forEach(id=>gain(d.sheep.find(x=>x.id==id),1));
   if(st){const first=st>(d.adv|0),c=Math.round(60*st*(1+st/10)*(first?1:.25));d.wins++;d.coins+=c;b.reward={coins:c,rating:0,first};prog(d,'adv');
