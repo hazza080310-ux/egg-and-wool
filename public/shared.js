@@ -85,5 +85,7 @@ const RUINS=[{id:'barn',n:'Abandoned Barn',icon:'🏚️',lv:2,floors:2,travel:3
 {id:'manor',n:'Moonlit Manor',icon:'🏰',lv:11,floors:3,travel:90,els:[6,4],r:2,lvl:11,h:280,props:['🖼️','🕯️','🪑','🕸️','⚰️'],xp:12,c:10,boss:'Lady Fleecewick',egg:3},
 {id:'silo',n:'Starfall Silo',icon:'🛰️',lv:16,floors:4,travel:120,els:[3,6],r:3,lvl:16,h:250,props:['🔭','🧪','📡','🕯️','🌠'],xp:18,c:18,boss:'The Silo Warden',egg:5}];
 const FIELDS=['Sunny Meadow','Mud Bog','Thunderstorm','Starfall Night','Heatwave','Blizzard','Moonless Night'];
-const G={FIELDS,evoShards,evoBond,relShards,awkCost,rl,lvCap,maxEvo,awkMax,resSlots,lvMult,xpOf,lvOf,lvPct,bondMult,BR,branch,TRANS,RES,dexInfo,DEXMS,TRACKS,RUINS,herdLv,isEgg,bcap,stageLv,farmLv,CLAN_GOALS,PAS,SPECIALS,SPM,mkSpecial,ELM,elm,matchup,moves,ELI,STAGE_NAMES,QUESTS,trainCost,FORMS,evoLv,STAGES,evoCost,RAR,EGG,TR,ROLES,EL,ELC,EX,B,ACH,roll,stats,sheepRate,rate,cap,slots,bcost,price};
+// chance that a sheep in a dodge stance (x) evades a hit from u: speed edge matters, area moves are harder to dodge
+const dodgeChance=(x,u,area)=>Math.max(.15,Math.min(.85,.5+.4*(x.spd-u.spd)/Math.max(1,x.spd,u.spd)))*(area?.6:1);
+const G={dodgeChance,FIELDS,evoShards,evoBond,relShards,awkCost,rl,lvCap,maxEvo,awkMax,resSlots,lvMult,xpOf,lvOf,lvPct,bondMult,BR,branch,TRANS,RES,dexInfo,DEXMS,TRACKS,RUINS,herdLv,isEgg,bcap,stageLv,farmLv,CLAN_GOALS,PAS,SPECIALS,SPM,mkSpecial,ELM,elm,matchup,moves,ELI,STAGE_NAMES,QUESTS,trainCost,FORMS,evoLv,STAGES,evoCost,RAR,EGG,TR,ROLES,EL,ELC,EX,B,ACH,roll,stats,sheepRate,rate,cap,slots,bcost,price};
 if(typeof module!='undefined')module.exports=G;else g.G=G})(this);
