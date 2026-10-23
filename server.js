@@ -150,38 +150,44 @@ A.train=async(d,b)=>{const s=d.sheep.find(x=>x.id==b.id);if(!s)return{err:'?'};i
 A.daily=async d=>{const now=Date.now();if(now-(d.daily||0)<20*36e5)return{err:'Already claimed today'};d.streak=now-(d.daily||0)<48*36e5?(d.streak|0)+1:1;const c=80+30*Math.min(d.streak,10);d.coins+=c;d.daily=now;addXp(d,15);addRp(d,2);return{gain:c}};
 // ---- battles ----
 const BT=new Map();
-const unit=(s,side)=>{const st=G.stats(s),p=s.sp?G.SPM[s.sp].pas:null,u={side,name:s.name,role:s.role,el:s.el,g:s,hp:st.hp,max:st.hp,atk:Math.round(st.atk*(p=='mighty'?1.3:1)),def:st.def,spd:Math.round(st.spd*(p=='haste'?1.5:1)),cds:[0,0,0,0,0,0,0,0,0,0],burn:0,mv:G.moves(s),sh:0,shd:{},stun:0,imm:0,bd:s.bd|0,endured:0,trait:s.trait,pas:p};if(p=='bulwark')addSh(u,'Bulwark',20);return u};
+const unit=(s,side)=>{const st=G.stats(s),p=s.sp?G.SPM[s.sp].pas:null,u={side,name:s.name,role:s.role,el:s.el,g:s,hp:st.hp,max:st.hp,atk:Math.round(st.atk*(p=='mighty'?1.3:1)),def:st.def,spd:Math.round(st.spd*(p=='haste'?1.5:1)),cds:[0,0,0,0,0,0,0,0,0,0],burn:0,mv:G.moves(s),sh:0,shd:{},stun:0,imm:0,bd:s.bd|0,dg:0,fc:0,endured:0,trait:s.trait,pas:p};if(p=='bulwark')addSh(u,'Bulwark',20);return u};
 const elm=G.elm;
 const E=(b,m,a,to,v,k)=>b.ev.push({m,a,to:to||[],v,k,hp:b.u.map(x=>x.hp),sh:b.u.map(x=>x.sh)});
-function hit(u,x,mult,b){const e=elm(u.el,x.el),crit=Math.random()<(u.trait=='lucky'?.2:.08);
- // faster targets can dodge (up to 12%)
- if(Math.random()<Math.min(.12,Math.max(0,(x.spd-u.spd)/(Math.max(1,u.spd)*5))))return{v:0,crit:false,e,miss:true};
- const vuln=(x.stun||x.burn>0)?1.15:1,fld=b&&b.field!=null&&u.el==b.field?1.2:1;
- const v=Math.max(1,Math.round(u.atk*mult*e*vuln*fld*(crit?1.5:1)*(.9+Math.random()*.2)*100/(100+x.def)));let rem=v;for(const k of Object.keys(x.shd)){const a=Math.min(x.shd[k],rem);x.shd[k]-=a;rem-=a;if(x.shd[k]<=0)delete x.shd[k]}x.sh=Object.values(x.shd).reduce((p,c)=>p+c,0);x.hp=Math.max(0,x.hp-rem);
+function hit(u,x,mult,b,area){const e=elm(u.el,x.el),crit=Math.random()<(u.trait=='lucky'?.2:.08);
+ // Dodge stance: a sheep that spent its turn dodging evades with G.dodgeChance (and earns Focus); if it fails it still takes 20% less
+ // otherwise only a small passive chance: faster targets can dodge (up to 12%)
+ if(x.dg){if(Math.random()<G.dodgeChance(x,u,area)){x.fc=1;return{v:0,crit:false,e,miss:true,perfect:true}}}
+ else if(Math.random()<Math.min(.12,Math.max(0,(x.spd-u.spd)/(Math.max(1,u.spd)*5))))return{v:0,crit:false,e,miss:true};
+ const vuln=(x.stun||x.burn>0)?1.15:1,fld=b&&b.field!=null&&u.el==b.field?1.2:1,foc=u.fc?1.3:1,gl=x.dg?.8:1;
+ const v=Math.max(1,Math.round(u.atk*mult*e*vuln*fld*foc*gl*(crit?1.5:1)*(.9+Math.random()*.2)*100/(100+x.def)));let rem=v;for(const k of Object.keys(x.shd)){const a=Math.min(x.shd[k],rem);x.shd[k]-=a;rem-=a;if(x.shd[k]<=0)delete x.shd[k]}x.sh=Object.values(x.shd).reduce((p,c)=>p+c,0);x.hp=Math.max(0,x.hp-rem);
  // bond: a close sheep refuses to go down once per battle
  let endure=false;if(x.hp<=0&&x.bd>=50&&!x.endured){x.endured=1;x.hp=1;endure=true}
- if(x.pas=='thorns'&&v>0)u.hp=Math.max(0,u.hp-Math.round(v*.2));if(u.pas=='vamp')u.hp=Math.min(u.max,u.hp+Math.round(v*.25));return{v,crit,e,vuln:vuln>1,endure,x}}
+ if(x.pas=='thorns'&&v>0)u.hp=Math.max(0,u.hp-Math.round(v*.2));if(u.pas=='vamp')u.hp=Math.min(u.max,u.hp+Math.round(v*.25));return{v,crit,e,vuln:vuln>1,endure,x,glance:!!x.dg,focus:foc>1}}
 // stun/freeze: a unit that just lost a turn is immune to the next one (no stun-locks)
 const stunIt=x=>{if(x.imm){x.imm=0;return false}x.stun=1;return true};
 const applyAura=b=>{for(const sd of[0,1])if(b.u.some(x=>x.side==sd&&x.pas=='quack'))b.u.forEach(x=>{if(x.side==sd)x.atk=Math.round(x.atk*1.15)})};
 const addSh=(x,n,a)=>{x.shd[n]=Math.max(x.shd[n]||0,a);const sum=()=>Object.values(x.shd).reduce((p,c)=>p+c,0);let t=sum();if(t>60){x.shd[n]=Math.max(0,x.shd[n]-(t-60));if(!x.shd[n])delete x.shd[n];t=sum()}x.sh=t};
-const eff=r=>r.miss?' Dodged!':(r.crit?' CRIT!':'')+(r.e>1?' Super effective!':r.e<1?' Not very effective.':'')+(r.vuln?' (it was off balance)':'')+(r.endure?' '+r.x.name+' hangs on thanks to its bond!':'');
-function exec(b,i,mi,t){const u=b.u[i],m=u.mv[mi],foes=b.u.filter(x=>x.side!=u.side&&x.hp>0),fr=b.u.filter(x=>x.side==u.side&&x.hp>0),tg=b.u[t],ix=x=>b.u.indexOf(x),ty=m[1];
+const eff=r=>r.miss?' Dodged!':(r.focus?' ⚡ Focus!':'')+(r.glance?' (braced: -20%)':'')+(r.crit?' CRIT!':'')+(r.e>1?' Super effective!':r.e<1?' Not very effective.':'')+(r.vuln?' (it was off balance)':'')+(r.endure?' '+r.x.name+' hangs on thanks to its bond!':'');
+function dodgeAct(b,i){const u=b.u[i];u.dg=1;E(b,`💨 ${u.name} braces to dodge!`,i,[i],0,'g')}
+const ATKT=['dmg','stun','drain','burn','freeze','all','stunall','burnall','freezeall','drainall'];
+function exec(b,i,mi,t){const u=b.u[i];if(mi<0)return dodgeAct(b,i);const atk=ATKT.includes(u.mv[mi][1]);exec0(b,i,mi,t);if(atk)u.fc=0}
+function exec0(b,i,mi,t){const u=b.u[i],m=u.mv[mi],foes=b.u.filter(x=>x.side!=u.side&&x.hp>0),fr=b.u.filter(x=>x.side==u.side&&x.hp>0),tg=b.u[t],ix=x=>b.u.indexOf(x),ty=m[1];
  if(m[3])u.cds[mi]=m[3];
  if(['dmg','stun','drain','burn','freeze'].includes(ty)){const x=tg&&tg.hp>0&&tg.side!=u.side?tg:foes[0],r=hit(u,x,m[2],b);let ex='',dz=true;
-  if(r.miss){E(b,`${u.name} uses ${m[0]} on ${x.name} but it dodges!`,i,[ix(x)],0,'m');return}
+  if(r.miss){E(b,`${u.name} uses ${m[0]} on ${x.name} but ${r.perfect?'it dodges perfectly! ⚡ Focus for '+x.name+'!':'it dodges!'}`,i,[ix(x)],r.perfect?1:0,'m');return}
   if(ty=='stun')dz=stunIt(x);
   if(ty=='burn'){x.burn=3;ex=` and sets ${x.name} ablaze`}
   if(ty=='freeze'&&Math.random()<.4){if(stunIt(x))ex=` and freezes ${x.name} solid`}
   if(ty=='drain'){const h=Math.round(r.v*.5);u.hp=Math.min(u.max,u.hp+h);ex=` and drains ${h} HP`}
   E(b,`${u.name} uses ${m[0]} on ${x.name} for ${r.v}${ex}.${eff(r)}${ty=='stun'?(dz?' '+x.name+' is dizzy!':' '+x.name+' shrugs it off!'):''}`,i,[ix(x)],r.v,'d')}
- else if(['all','stunall','burnall','freezeall','drainall'].includes(ty)){let v=0,tot=0;foes.forEach(x=>{const r=hit(u,x,m[2],b);v=r.v;tot+=v;if(r.miss)return;if(ty=='stunall')stunIt(x);if(ty=='burnall')x.burn=3;if(ty=='freezeall'&&Math.random()<.3)stunIt(x)});
+ else if(['all','stunall','burnall','freezeall','drainall'].includes(ty)){let v=0,tot=0;const hitT=[],dgT=[];foes.forEach(x=>{const r=hit(u,x,m[2],b,1);if(r.miss){dgT.push([x,r.perfect]);return}v=r.v;tot+=v;hitT.push(x);if(ty=='stunall')stunIt(x);if(ty=='burnall')x.burn=3;if(ty=='freezeall'&&Math.random()<.3)stunIt(x)});
   if(ty=='drainall')u.hp=Math.min(u.max,u.hp+Math.round(tot*.35));
-  E(b,`${u.name} unleashes ${m[0]}!${ty=='stunall'?' Everyone is dizzy!':ty=='burnall'?' Everyone is on fire!':ty=='freezeall'?' A chilly mess!':''}`,i,foes.map(ix),v,'d')}
+  E(b,`${u.name} unleashes ${m[0]}!${ty=='stunall'?' Everyone is dizzy!':ty=='burnall'?' Everyone is on fire!':ty=='freezeall'?' A chilly mess!':''}`,i,hitT.map(ix),v,'d');dgT.forEach(([x,pf])=>E(b,`${x.name} dodges ${u.name}'s ${m[0]}!${pf?' ⚡ Focus!':''}`,i,[ix(x)],pf?1:0,'m'))}
  else if(ty=='heal'){const x=tg&&tg.hp>0&&tg.side==u.side?tg:fr.sort((a,c)=>a.hp/a.max-c.hp/c.max)[0],v=Math.round(u.atk*m[2]);x.hp=Math.min(x.max,x.hp+v);E(b,`${u.name} hugs ${x.name} (+${v} HP)`,i,[ix(x)],v,'h')}
  else if(ty=='healall'){const v=Math.round(u.atk*m[2]);fr.forEach(x=>x.hp=Math.min(x.max,x.hp+v));E(b,`${u.name} sings ${m[0]} (+${v} HP each)`,i,fr.map(ix),v,'h')}
  else{fr.forEach(x=>addSh(x,m[0],m[2]<1?Math.round(x.max*m[2]):m[2]));E(b,`${u.name} raises ${m[0]}!`,i,fr.map(ix),0,'s')}}
 function ai(b,i){const u=b.u[i],mv=u.mv,foes=b.u.filter(x=>x.side!=u.side&&x.hp>0),fr=b.u.filter(x=>x.side==u.side&&x.hp>0),ok=[0];
+ if(!b.dumb&&u.hp/u.max<.4&&!u.dg&&Math.random()<.3){exec(b,i,-1,0);return}
  for(let k=1;k<mv.length;k++)if(u.cds[k]==0)ok.push(k);const smart=!b.dumb,hurt=fr.slice().sort((a,c)=>a.hp/a.max-c.hp/c.max)[0],isH=k=>mv[k][1]=='heal'||mv[k][1]=='healall';let mi=0;
  const heals=ok.filter(isH);
  if(smart&&heals.length&&hurt.hp/hurt.max<.5)mi=pick(heals);
@@ -194,12 +200,12 @@ function advance(b){for(let g=0;g<300;g++){b.u.forEach((x,k)=>{if(x.hp<=0&&x.pas
  if(!al(0)||!al(1)){b.done=true;b.win=al(0)?true:al(1)?false:Math.random()<.5;b.cur=null;return}
  if(!b.q.length){b.q=b.u.map((u,i)=>i).filter(i=>b.u[i].hp>0).sort((x,y)=>b.u[y].spd-b.u[x].spd);b.round=(b.round|0)+1;
   if(b.round>12){b.u.forEach(x=>{if(x.hp>0)x.hp=Math.max(0,x.hp-Math.ceil(x.max*.05*(b.round-12)))});E(b,'⛈ A storm rolls in and soaks everyone!',null,b.u.map((x,i)=>i),0,'d');continue}}
- const i=b.q.shift(),u=b.u[i];if(u.hp<=0)continue;for(let k=0;k<10;k++)if(u.cds[k]>0)u.cds[k]--;
+ const i=b.q.shift(),u=b.u[i];if(u.hp<=0)continue;u.dg=0;for(let k=0;k<10;k++)if(u.cds[k]>0)u.cds[k]--;
  if(u.burn>0){const dm=Math.max(1,Math.ceil(u.max*.06));u.burn--;u.hp=Math.max(0,u.hp-dm);E(b,`${u.name} burns for ${dm}!`,null,[i],dm,'d');if(u.hp<=0)continue}
  if(u.pas=='regen'&&u.hp<u.max){const h=Math.ceil(u.max*.06);u.hp=Math.min(u.max,u.hp+h);E(b,`${u.name} regenerates ${h} HP`,i,[i],h,'h')}
  if(u.stun){u.stun=0;u.imm=1;E(b,`${u.name} is too dizzy to move!`,i,[],0,'x');continue}else u.imm=0;
  if(b.pvp||u.side==0){b.cur=i;b.turnAt=Date.now();return}ai(b,i)}}
-const vu=b=>b.u.map(({name,role,el,g,hp,max,cds,sh,stun,side,burn,bd})=>({name,role,el,g,hp,max,cds,sh,stun,side,burn,bd}));
+const vu=b=>b.u.map(({name,role,el,g,hp,max,cds,sh,stun,side,burn,bd,spd,dg,fc})=>({name,role,el,g,hp,max,cds,sh,stun,side,burn,bd,spd,dg,fc}));
 const bv=b=>{const ev=b.ev;b.ev=[];return{init:b.init,u:vu(b),q:b.q.filter(i=>b.u[i].hp>0),field:b.field,cur:b.cur,done:b.done,win:b.win,oname:b.oname,reward:b.reward,ev}};
 const gain=(s,x)=>{const cp=(s&&s.cap)||20;if(s&&s.lv<cp){s.xp+=x;s.lv=G.lvOf(s.xp,cp)}};
 function finish(d,b){if(b.paid)return;b.paid=1;if(b.exp)return finishExp(d,b);postBattle(d,b);const st=b.stage|0;addXp(d,b.win?(st?(st>(d.adv|0)?40:10):b.war?15:12):4);
@@ -239,8 +245,8 @@ A.bstart=async(d,body,q)=>{const st=(body&&body.stage)|0,me=d.team.map(id=>d.she
  const b={u:[...me.map(s=>unit(s,0)),...opp.map(s=>unit(s,1))],oname,q:[],cur:null,done:false,ev:[],stage:st,war,dumb:st?st<8:(war?false:!o)};
  if(st?st<5:(war?false:!o))b.u.filter(x=>x.side==1).forEach(x=>{x.max=x.hp=Math.round(x.max*.92);x.atk=Math.round(x.atk*.92)});
  b.field=Math.random()<.7?Math.floor(Math.random()*7):null;applyAura(b);if(b.field!=null)E(b,'🌍 '+G.FIELDS[b.field]+': '+G.EL[b.field]+' sheep hit 20% harder this battle!',null,[],0,'x');BT.set(q.n,b);advance(b);if(b.done){finish(d,b);if(b.war)await warDone(d,b,q)}return{bt:bv(b)}};
-A.bact=async(d,body,q)=>{const b=BT.get(q.n);if(!b||b.done||b.cur==null)return{err:'No battle in progress'};const u=b.u[b.cur],mi=body.mi|0;
- if(mi<0||mi>=u.mv.length||(mi>0&&u.cds[mi]>0))return{err:'Move not ready'};try{exec(b,b.cur,mi,body.t|0)}catch(e){console.error('exec',e)}b.cur=null;try{advance(b)}catch(e){console.error('advance',e);b.done=true;b.win=false;b.cur=null}if(b.done){finish(d,b);if(b.war)await warDone(d,b,q)}return{bt:bv(b)}};
+A.bact=async(d,body,q)=>{const b=BT.get(q.n);if(!b||b.done||b.cur==null)return{err:'No battle in progress'};const u=b.u[b.cur],mi=body.dodge?-1:body.mi|0;
+ if(mi<-1||mi>=u.mv.length||(mi>0&&u.cds[mi]>0))return{err:'Move not ready'};try{exec(b,b.cur,mi,body.t|0)}catch(e){console.error('exec',e)}b.cur=null;try{advance(b)}catch(e){console.error('advance',e);b.done=true;b.win=false;b.cur=null}if(b.done){finish(d,b);if(b.war)await warDone(d,b,q)}return{bt:bv(b)}};
 // ---- live PvP (polling) ----
 const LQ=new Map(),LM=new Map(),LU=new Map(),flush=b=>{b.log.push(...b.ev);b.ev=[]};
 async function mkMatch(k0,k1){const us=await Promise.all([k0,k1].map(x=>db.get(x))),team=us.map(u=>{tick(u.data);return u.data.team.map(id=>u.data.sheep.find(x=>x.id==id))});
@@ -258,8 +264,8 @@ app.post('/api/live/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.no
  if(!m){if(a!='join')return s.json({state:'none'});for(const[x,e]of LQ)if(now-e.seen>12000)LQ.delete(x);for(const[id,mm]of LM)if(now-mm.t>36e5)LM.delete(id);
   const tg=q.body.target,o=tg?(LQ.has(tg)&&tg!=k?tg:null):[...LQ.keys()].find(x=>x!=k);if(tg&&!o)return s.json({state:'gone'});if(o){LQ.delete(o);LQ.delete(k);m=await mkMatch(o,k)}else{LQ.set(k,{seen:now,name:q.u.data.name,rating:q.u.data.rating});return s.json({state:'wait'})}}
  const side=m.keys.indexOf(k),b=m.b;m.seen[side]=now;
- if(a=='act'){if(b.done||b.cur==null)return s.json({err:'No battle in progress'});const u=b.u[b.cur];if(u.side!=side)return s.json({err:'Not your turn'});const mi=q.body.mi|0;
-  if(mi<0||mi>=u.mv.length||(mi>0&&u.cds[mi]>0))return s.json({err:'Move not ready'});exec(b,b.cur,mi,q.body.t|0);b.cur=null;advance(b);flush(b);if(b.done)await finishLive(m);return s.json(lview(m,side,since))}
+ if(a=='act'){if(b.done||b.cur==null)return s.json({err:'No battle in progress'});const u=b.u[b.cur];if(u.side!=side)return s.json({err:'Not your turn'});const mi=q.body.dodge?-1:q.body.mi|0;
+  if(mi<-1||mi>=u.mv.length||(mi>0&&u.cds[mi]>0))return s.json({err:'Move not ready'});exec(b,b.cur,mi,q.body.t|0);b.cur=null;advance(b);flush(b);if(b.done)await finishLive(m);return s.json(lview(m,side,since))}
  if(!b.done){if(now-m.seen[1-side]>20000)await forfeit(1-side);else if(b.cur!=null&&now-b.turnAt>30000){ai(b,b.cur);advance(b);flush(b);if(b.done)await finishLive(m)}}
  s.json(lview(m,side,since))}));
 // ---- herds (clans) & herd wars ----
