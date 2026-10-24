@@ -1,5 +1,14 @@
 const express=require('express'),crypto=require('crypto'),fs=require('fs'),path=require('path'),G=require('./public/shared.js');
-const app=express();app.use(express.json());app.use(express.static(path.join(__dirname,'public')));
+const zlib=require('zlib');
+// gzip: static files are compressed once and cached, JSON replies over ~1.4 KB are compressed on the fly
+const GZF={},acc=q=>/gzip/.test(q.headers['accept-encoding']||'');
+const gzStatic=(q,s,next)=>{const f=q.method!='GET'?null:q.path=='/'||q.path=='/index.html'?'index.html':q.path=='/shared.js'?'shared.js':null;if(!f||!acc(q))return next();
+ const p=path.join(__dirname,'public',f);fs.stat(p,(e,st)=>{if(e)return next();let c=GZF[f];if(!c||c.m!=st.mtimeMs)c=GZF[f]={m:st.mtimeMs,b:zlib.gzipSync(fs.readFileSync(p),{level:9})};const et='"'+c.m+'"';
+  if(q.headers['if-none-match']==et)return s.status(304).end();s.set({'Content-Type':f.endsWith('.js')?'text/javascript; charset=utf-8':'text/html; charset=utf-8','Content-Encoding':'gzip','Vary':'Accept-Encoding','ETag':et,'Cache-Control':'no-cache'});s.send(c.b)})};
+const gzJson=(q,s,next)=>{if(!acc(q))return next();s.json=o=>{const b=Buffer.from(JSON.stringify(o));s.set('Content-Type','application/json; charset=utf-8');if(b.length<1400)return s.send(b);
+ zlib.gzip(b,(e,z)=>{if(e)return s.send(b);s.set({'Content-Encoding':'gzip','Vary':'Accept-Encoding'});s.send(z)})};next()};
+const memo=(ms,f)=>{let t=0,v;return async()=>{if(Date.now()-t>ms){v=await f();t=Date.now()}return v}};
+const app=express();app.use(gzJson);app.use(gzStatic);app.use(express.json());app.use(express.static(path.join(__dirname,'public')));
 const SECRET=process.env.SECRET||'dev-secret-change-me';
 let db,MODE='file';
 async function initDb(){
@@ -46,7 +55,7 @@ function tick(d){d.sh=d.sh||{};d.rs=d.rs||{};d.rq=d.rq||[];const tn=Date.now();d
  d.dxb=G.dexInfo(d).bonus;d.ex=(d.ex||[]).filter(e=>e.rooms);const day=Math.floor(Date.now()/864e5);if(!d.q||d.q.day!=day){const ks=Object.keys(G.QUESTS).sort(()=>Math.random()-.5).slice(0,3);d.q={day,l:ks.map(k=>({k,n:pick(G.QUESTS[k][1]),h:0,r:Math.max(100,Math.round(G.rate(d)*200)),c:0}))}}
  const now=Date.now(),dt=Math.min(90,Math.max(0,(now-d.t)/1000));d.t=now;d.wool+=G.rate(d)*dt;const c=G.cap(d);
  if(d.wool>c)d.wool=c
- d.team=d.team.filter(id=>d.sheep.some(s=>s.id==id&&!G.isEgg(s)&&!away(d,s.id)));for(const s of d.sheep.filter(s=>!G.isEgg(s)&&!away(d,s.id)).sort((a,b)=>b.r-a.r))if(d.team.length<3&&!d.team.includes(s.id))d.team.push(s.id)}
+ const aw=new Set(d.ex.flatMap(e=>e.ids));d.team=d.team.filter(id=>d.sheep.some(s=>s.id==id&&!G.isEgg(s)&&!aw.has(id)));if(d.team.length<3)for(const s of d.sheep.filter(s=>!G.isEgg(s)&&!aw.has(s.id)).sort((a,b)=>b.r-a.r))if(d.team.length<3&&!d.team.includes(s.id))d.team.push(s.id)}
 function checkAch(d){for(const[id,,f,c]of G.ACH)if(!d.ach.includes(id)&&f(d)){d.ach.push(id);d.coins+=c}}
 const grantSp=d=>{d.spl=d.spl||[];const out=[];for(const x of G.SPECIALS)if(!x.herd&&!d.spl.includes(x.id)&&!d.sheep.some(y=>y.sp==x.id)&&x.cond(d)){d.spl.push(x.id);const ns=G.mkSpecial(x.id);if(x.id=='duck')ns.hatchAt=Date.now()+864e5;d.sheep.push(ns);out.push(x.name)}return out};
 const view=d=>({...d,calc:{rate:G.rate(d),cap:G.cap(d),price:G.price(d),slots:G.slots(d)}});
@@ -57,11 +66,16 @@ A.hatch=async(d,b)=>{const ei=b.egg|0,e=G.EGG[ei],n=b.n==10?10:1;if(!e)return{er
  if(d.sheep.length+n>G.slots(d))return{err:n>1?'You need '+n+' free pasture slots':'Pasture full! Release a sheep or upgrade the Pasture.'};
  d.coins-=e.cost*n;d.dex=d.dex||[];let nd=0;const out=[];for(let i=0;i<n;i++){const x=G.roll(ei);d.sheep.push(x);d.hatched++;d.best=Math.max(d.best||0,x.r);const k=(x.form|0)+'-'+x.r;if(!d.dex.includes(k)){d.dex.push(k);nd++;addRp(d,2)}out.push(x)}
  prog(d,'hatch',n);addXp(d,n*Math.round(4+Math.log10(e.cost)*4));addXp(d,nd*8);return{sheep:out[n-1],batch:out,newDex:nd}};
-A.upgrade=async(d,b)=>{const x=G.B.find(y=>y[0]==b.b);if(!x)return{err:'?'};const l=d.b[x[0]];if(l>=10)return{err:'Max level'};if(l>=G.bcap(G.farmLv(d.fxp).lv))return{err:'Reach farm level '+Math.max(1,2*l)+' to upgrade this further'};
+A.upgrade=async(d,b)=>{const x=G.B.find(y=>y[0]==b.b);if(!x)return{err:'?'};const l=d.b[x[0]];if(l>=G.bmax(d))return{err:'Max level'};if(l<10&&l>=G.bcap(G.farmLv(d.fxp).lv))return{err:'Reach farm level '+Math.max(1,2*l)+' to upgrade this further'};
  const c=G.bcost(x,l);if(d.coins<c)return{err:'Not enough coins'};d.coins-=c;d.b[x[0]]++;addXp(d,25);return{}};
 A.team=async(d,b)=>{const ids=[...new Set(b.ids||[])];if(ids.length!=3||!ids.every(i=>d.sheep.some(s=>s.id==i&&!G.isEgg(s)&&!away(d,i))))return{err:'Pick 3 different sheep'};d.team=ids;return{}};
-A.release=async(d,b)=>{const i=d.sheep.findIndex(s=>s.id==b.id);if(i<0)return{err:'?'};if(d.sheep[i].sp)return{err:'Special sheep cannot be released'};if(d.sheep.length<=3)return{err:'Keep at least 3 sheep'};
+A.release=async(d,b)=>{const i=d.sheep.findIndex(s=>s.id==b.id);if(i<0)return{err:'?'};if(d.sheep[i].sp)return{err:'Special sheep cannot be released'};if(d.sheep.length<=3)return{err:'Keep at least 3 sheep'};if(away(d,d.sheep[i].id))return{err:'This sheep is on an expedition'};
  const[s]=d.sheep.splice(i,1);d.coins+=G.RAR[s.r].v;giveShards(d,s.el,G.relShards(s));d.team=d.team.filter(x=>x!=s.id);tick(d);return{}};
+// release several sheep at once (flock tab select mode)
+A.releasemany=async(d,b)=>{const ids=[...new Set(Array.isArray(b.ids)?b.ids:[])].slice(0,300),list=ids.map(id=>d.sheep.find(s=>s.id==id)).filter(Boolean);
+ if(!list.length)return{err:'Nothing selected'};if(list.some(s=>s.sp))return{err:'Special sheep cannot be released'};if(list.some(s=>G.isEgg(s)))return{err:'Eggs cannot be released'};if(list.some(s=>away(d,s.id)))return{err:'Some selected sheep are on an expedition'};
+ if(d.sheep.length-list.length<3)return{err:'Keep at least 3 sheep'};const rm=new Set(list.map(s=>s.id));let coins=0;d.sheep=d.sheep.filter(s=>!rm.has(s.id));
+ for(const s of list){coins+=G.RAR[s.r].v;giveShards(d,s.el,G.relShards(s))}d.coins+=coins;d.team=d.team.filter(x=>!rm.has(x));tick(d);return{n:list.length,coins}};
 A.prestige=async d=>{if(d.sheep.filter(s=>s.r>=6&&!s.sp).length<3)return{err:'You need 3 hatched Celestial sheep to prestige'};const duck=d.sheep.find(s=>s.sp=='duck');d.pr=(d.pr|0)+1;
  const starters=[0,1,2].map(()=>{let s;do s=G.roll(0);while(s.r>0);return s});d.sheep=[...(duck?[duck]:[]),...starters];if(duck){duck.lv=Math.min(20,duck.lv+3);duck.xp=(duck.lv-1)*1.5;duck.hatchAt=Date.now()+864e5}
  d.coins=30;d.fxp=0;d.q=null;d.streak=0;d.w0=d.wins;d.wool=0;d.b={barn:0,shed:0,pasture:0,market:0,auto:0};d.team=[];d.adv=0;d.spl=duck?['duck']:[];d.hstash=[];d.ex=[];d.hatched=0;d.gc=0;d.best=0;d.t=Date.now();tick(d);return{prestiged:d.pr}};
@@ -270,6 +284,7 @@ app.post('/api/live/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.no
  s.json(lview(m,side,since))}));
 // ---- ranked PvP: live 1v1, the rest of the team waits in reserve (polling) ----
 const RQ=new Map(),RM=new Map(),RU=new Map();
+const rtopC=memo(8000,async()=>(await db.all()).map(x=>x.data).filter(x=>(x.rk|0)>0||x.rkw||x.rkl).map(x=>({name:x.name,rp:x.rk|0,w:x.rkw|0,l:x.rkl|0})).sort((x,y)=>y.rp-x.rp).slice(0,15));
 const TIERS=[['Bronze','🥉',0],['Silver','🥈',100],['Gold','🥇',250],['Platinum','💠',450],['Diamond','💎',700],['Champion','👑',1000]];
 const tierOf=rp=>TIERS.filter(t=>rp>=t[2]).pop();
 const rkSide=(b,s)=>b.u.map((x,i)=>i).filter(i=>b.u[i].side==s);
@@ -315,7 +330,7 @@ async function rkStep(m,now){const b=m.b;if(b.done)return;
  flush(b);if(b.done)await finishRank(m)}
 app.post('/api/rank/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.now(),since=q.body.since|0,d=q.u.data;
  const stale=()=>{for(const[x,e]of RQ)if(now-e.seen>10000)RQ.delete(x)};let m=RM.get(RU.get(k));
- if(a=='info'){stale();const top=(await db.all()).map(x=>x.data).filter(x=>(x.rk|0)>0||x.rkw||x.rkl).map(x=>({name:x.name,rp:x.rk|0,w:x.rkw|0,l:x.rkl|0})).sort((x,y)=>y.rp-x.rp).slice(0,15);
+ if(a=='info'){stale();const top=await rtopC();
   return s.json({rp:d.rk|0,w:d.rkw|0,l:d.rkl|0,best:d.rkbest|0,top,queue:[...RQ].filter(([x])=>x!=k).map(([x,e])=>({k:x,name:e.name,rp:e.rp})),inMatch:!!(m&&!m.b.done)})}
  if(a=='cancel'){RQ.delete(k);return s.json({})}
  if(a=='ack'){if(m&&m.b.done)RU.delete(k);return s.json({})}
@@ -379,7 +394,8 @@ app.post('/api/clan/:a',auth,H(async(q,s)=>{const k=q.n,d=q.u.data,a=q.params.a,
 app.post('/api/act/:a',auth,H(async(q,s)=>{const f=A[q.params.a];if(!f)return s.sendStatus(404);const d=q.u.data;await syncHerdFor(d,q.n);tick(d);const l0=G.farmLv(d.fxp).lv;const r=await f(d,q.body,q)||{};
  if(r.err)return s.json({err:r.err,d:view(d)});checkAch(d);const newSp=grantSp(d);if(r.bt&&r.bt.reward&&newSp.length)r.bt.reward.sheep=newSp.join(', ');if(d.clan&&r.bt&&r.bt.done&&r.bt.win){const cc=await db.cget(d.clan);if(cc){bumpWin(cc,q.n);await db.cput(cc.key,cc)}}
  await db.put(q.n,q.u);const l1=G.farmLv(d.fxp).lv;s.json({...r,d:view(d),newSp,flv:l1>l0?l1:undefined})}));
-app.get('/api/board',H(async(q,s)=>{s.json((await db.all()).map(x=>({name:x.data.name,rating:x.data.rating,wins:x.data.wins,sheep:x.data.sheep.length,best:x.data.best||0})).sort((a,b)=>b.rating-a.rating).slice(0,25))}));
+const boardC=memo(15000,async()=>(await db.all()).map(x=>({name:x.data.name,rating:x.data.rating,wins:x.data.wins,sheep:x.data.sheep.length,best:x.data.best||0})).sort((a,b)=>b.rating-a.rating).slice(0,25));
+app.get('/api/board',H(async(q,s)=>s.json(await boardC())));
 app.get('/api/farm/:n',H(async(q,s)=>{const u=await db.get(q.params.n.toLowerCase());if(!u)return s.sendStatus(404);const d=u.data;s.json({name:d.name,rating:d.rating,sheep:d.sheep.slice().sort((a,b)=>b.r-a.r).slice(0,30)})}));
 app.get('/api/health',(q,s)=>s.json({storage:MODE}));
 initDb().then(()=>{if(MODE=='file'&&process.env.RENDER)console.warn('WARNING: no DATABASE_URL set - saves will be WIPED when this server sleeps or redeploys!');return app.listen(process.env.PORT||3000,()=>console.log('EGG & WOOL running ('+MODE+' storage)'))}).catch(e=>{console.error(e);process.exit(1)});
