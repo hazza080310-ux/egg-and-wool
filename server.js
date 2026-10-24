@@ -171,7 +171,7 @@ const eff=r=>r.miss?' Dodged!':(r.focus?' ⚡ Focus!':'')+(r.glance?' (braced: -
 function dodgeAct(b,i){const u=b.u[i];u.dg=1;E(b,`💨 ${u.name} braces to dodge!`,i,[i],0,'g')}
 const ATKT=['dmg','stun','drain','burn','freeze','all','stunall','burnall','freezeall','drainall'];
 function exec(b,i,mi,t){const u=b.u[i];if(mi<0)return dodgeAct(b,i);const atk=ATKT.includes(u.mv[mi][1]);exec0(b,i,mi,t);if(atk)u.fc=0}
-function exec0(b,i,mi,t){const u=b.u[i],m=u.mv[mi],foes=b.u.filter(x=>x.side!=u.side&&x.hp>0),fr=b.u.filter(x=>x.side==u.side&&x.hp>0),tg=b.u[t],ix=x=>b.u.indexOf(x),ty=m[1];
+function exec0(b,i,mi,t){const u=b.u[i],m=u.mv[mi],foes=b.u.filter(x=>x.side!=u.side&&x.hp>0&&!x.off),fr=b.u.filter(x=>x.side==u.side&&x.hp>0&&!x.off),tg=b.u[t],ix=x=>b.u.indexOf(x),ty=m[1];
  if(m[3])u.cds[mi]=m[3];
  if(['dmg','stun','drain','burn','freeze'].includes(ty)){const x=tg&&tg.hp>0&&tg.side!=u.side?tg:foes[0],r=hit(u,x,m[2],b);let ex='',dz=true;
   if(r.miss){E(b,`${u.name} uses ${m[0]} on ${x.name} but ${r.perfect?'it dodges perfectly! ⚡ Focus for '+x.name+'!':'it dodges!'}`,i,[ix(x)],r.perfect?1:0,'m');return}
@@ -205,7 +205,7 @@ function advance(b){for(let g=0;g<300;g++){b.u.forEach((x,k)=>{if(x.hp<=0&&x.pas
  if(u.pas=='regen'&&u.hp<u.max){const h=Math.ceil(u.max*.06);u.hp=Math.min(u.max,u.hp+h);E(b,`${u.name} regenerates ${h} HP`,i,[i],h,'h')}
  if(u.stun){u.stun=0;u.imm=1;E(b,`${u.name} is too dizzy to move!`,i,[],0,'x');continue}else u.imm=0;
  if(b.pvp||u.side==0){b.cur=i;b.turnAt=Date.now();return}ai(b,i)}}
-const vu=b=>b.u.map(({name,role,el,g,hp,max,cds,sh,stun,side,burn,bd,spd,dg,fc})=>({name,role,el,g,hp,max,cds,sh,stun,side,burn,bd,spd,dg,fc}));
+const vu=b=>b.u.map(({name,role,el,g,hp,max,cds,sh,stun,side,burn,bd,spd,dg,fc,off})=>({name,role,el,g,hp,max,cds,sh,stun,side,burn,bd,spd,dg,fc,off}));
 const bv=b=>{const ev=b.ev;b.ev=[];return{init:b.init,u:vu(b),q:b.q.filter(i=>b.u[i].hp>0),field:b.field,cur:b.cur,done:b.done,win:b.win,oname:b.oname,reward:b.reward,ev}};
 const gain=(s,x)=>{const cp=(s&&s.cap)||20;if(s&&s.lv<cp){s.xp+=x;s.lv=G.lvOf(s.xp,cp)}};
 function finish(d,b){if(b.paid)return;b.paid=1;if(b.exp)return finishExp(d,b);postBattle(d,b);const st=b.stage|0;addXp(d,b.win?(st?(st>(d.adv|0)?40:10):b.war?15:12):4);
@@ -268,6 +268,70 @@ app.post('/api/live/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.no
   if(mi<-1||mi>=u.mv.length||(mi>0&&u.cds[mi]>0))return s.json({err:'Move not ready'});exec(b,b.cur,mi,q.body.t|0);b.cur=null;advance(b);flush(b);if(b.done)await finishLive(m);return s.json(lview(m,side,since))}
  if(!b.done){if(now-m.seen[1-side]>20000)await forfeit(1-side);else if(b.cur!=null&&now-b.turnAt>30000){ai(b,b.cur);advance(b);flush(b);if(b.done)await finishLive(m)}}
  s.json(lview(m,side,since))}));
+// ---- ranked PvP: live 1v1, the rest of the team waits in reserve (polling) ----
+const RQ=new Map(),RM=new Map(),RU=new Map();
+const TIERS=[['Bronze','🥉',0],['Silver','🥈',100],['Gold','🥇',250],['Platinum','💠',450],['Diamond','💎',700],['Champion','👑',1000]];
+const tierOf=rp=>TIERS.filter(t=>rp>=t[2]).pop();
+const rkSide=(b,s)=>b.u.map((x,i)=>i).filter(i=>b.u[i].side==s);
+const rkAlive=(b,s)=>rkSide(b,s).filter(i=>b.u[i].hp>0);
+function rkSend(m,s,i){const b=m.b,u=b.u[i];b.act[s]=i;u.off=false;u.seen=1;u.dg=0;E(b,`${m.names[s]} sends out ${u.name}!`,i,[i],0,'o')}
+function rkRevive(b){b.u.forEach((x,k)=>{if(x.hp<=0&&x.pas=='revive'&&!x.used&&!x.off){x.used=1;x.hp=Math.ceil(x.max*.5);x.stun=0;x.burn=0;E(b,`🔥 ${x.name} rises from the ashes!`,k,[k],0,'h')}})}
+function rkAuto(m,s){const u=m.b.u[m.b.act[s]],ok=u.mv.map((x,i)=>i).filter(i=>i>0&&!(u.cds[i]>0));return{mi:ok.length&&Math.random()<.6?ok[Math.floor(Math.random()*ok.length)]:0,dodge:false}}
+async function mkRank(k0,k1){const us=await Promise.all([k0,k1].map(x=>db.get(x))),team=us.map(u=>{tick(u.data);return u.data.team.map(id=>u.data.sheep.find(x=>x.id==id)).filter(Boolean)});
+ const b={u:[...team[0].map(x=>unit(x,0)),...team[1].map(x=>unit(x,1))],q:[],cur:null,done:false,ev:[],log:[],pvp:true,rk:true,round:0,act:[-1,-1]};b.u.forEach(x=>x.off=true);
+ b.field=Math.random()<.7?Math.floor(Math.random()*7):null;applyAura(b);if(b.field!=null)E(b,'🌍 '+G.FIELDS[b.field]+': '+G.EL[b.field]+' sheep hit 20% harder this battle!',null,[],0,'x');
+ const m={b,keys:[k0,k1],names:us.map(u=>u.data.name),rp:us.map(u=>u.data.rk|0),team:team.map(t=>t.map(x=>x.id)),seen:[Date.now(),Date.now()],t:Date.now(),phase:'lead',lead:[null,null],need:[false,false],sel:[null,null],pt:Date.now(),rt:Date.now()};
+ flush(b);const id=Math.random().toString(36).slice(2);RM.set(id,m);RU.set(k0,id);RU.set(k1,id);return m}
+// one round: both sides have chosen. Dodge goes first, then the faster sheep. A sheep that faints before acting loses its move.
+function rkResolve(m){const b=m.b,idx=[b.act[0],b.act[1]],sel=m.sel;b.round++;m.rt=Date.now();idx.forEach(i=>{b.u[i].dg=0});
+ const pri=s=>sel[s].dodge?1:0,order=[0,1].sort((x,y)=>pri(y)-pri(x)||b.u[idx[y]].spd-b.u[idx[x]].spd||Math.random()-.5);
+ for(const s of order){const i=idx[s],u=b.u[i],oi=idx[1-s],o=b.u[oi];if(u.hp<=0||o.hp<=0)continue;
+  if(u.burn>0){const dm=Math.max(1,Math.ceil(u.max*.06));u.burn--;u.hp=Math.max(0,u.hp-dm);E(b,`${u.name} burns for ${dm}!`,null,[i],dm,'d');if(u.hp<=0){rkRevive(b);continue}}
+  if(u.pas=='regen'&&u.hp<u.max){const h=Math.ceil(u.max*.06);u.hp=Math.min(u.max,u.hp+h);E(b,`${u.name} regenerates ${h} HP`,i,[i],h,'h')}
+  if(u.stun){u.stun=0;u.imm=1;E(b,`${u.name} is too dizzy to move!`,i,[],0,'x');continue}else u.imm=0;
+  const was=o.hp>0;if(sel[s].dodge)exec(b,i,-1,0);else exec(b,i,sel[s].mi,oi);
+  if(was&&o.hp<=0)E(b,`💥 ${o.name} fainted!`,null,[],0,'x');rkRevive(b)}
+ if(b.round>15){const f=.05*(b.round-15);idx.forEach(i=>{const u=b.u[i];if(u.hp>0)u.hp=Math.max(0,u.hp-Math.ceil(u.max*f))});E(b,'⛈ A storm rolls in and soaks both sheep!',null,idx,0,'d');rkRevive(b)}
+ idx.forEach(i=>{const u=b.u[i];if(u.hp>0)for(let k=0;k<10;k++)if(u.cds[k]>0)u.cds[k]--});
+ m.sel=[null,null];const al=[rkAlive(b,0).length,rkAlive(b,1).length];
+ if(!al[0]||!al[1])return al[0]?0:al[1]?1:(Math.random()<.5?0:1);
+ m.need=[0,1].map(s=>b.u[b.act[s]].hp<=0);m.phase=m.need[0]||m.need[1]?'switch':'choose';m.pt=Date.now();return null}
+async function finishRank(m){const b=m.b;if(b.paid)return;b.paid=1;b.reward=[null,null];
+ for(const s of[0,1]){const u=await db.get(m.keys[s]);if(!u)continue;const d=u.data,win=(b.win?0:1)==s,me=m.rp[s],op=m.rp[1-s],ex=1/(1+Math.pow(10,(op-me)/200));
+  let dr=win?Math.round(16+16*(1-ex)):-Math.round((8+10*ex)*(me<50?.5:1));if(m.forfeit===s)dr=-Math.round((12+6*ex)*(me<50?.5:1));
+  const before=d.rk|0,after=Math.max(0,before+dr);d.rk=after;d.rkw=(d.rkw|0)+(win?1:0);d.rkl=(d.rkl|0)+(win?0:1);d.rkbest=Math.max(d.rkbest|0,after);
+  const c=win?80:20;d.coins+=c;addXp(d,win?18:6);if(win)prog(d,'win');m.team[s].forEach(id=>{const sh=d.sheep.find(x=>x.id==id);if(sh){gain(sh,win?1:.5);bond(d,sh,win?2:1)}});
+  const t0=tierOf(before),t1=tierOf(after);b.reward[s]={coins:c,rp:after-before,rpNow:after,tier:t1[0]+' '+t1[1],tierUp:t1[2]>t0[2]};checkAch(d);await db.put(m.keys[s],u)}}
+const rview=(m,side,since)=>{const b=m.b,o=1-side;return{state:'rank',me:side,oname:m.names[o],orp:m.rp[o],rp:m.rp[side],phase:m.phase,act:b.act,need:m.need,lead:m.lead.map(x=>x!=null),sel:m.sel.map(x=>!!x),
+ u:b.u.map(x=>x.side==side||x.seen?vu({u:[x]})[0]:{hidden:1,side:x.side,hp:x.hp,max:x.max,off:true,name:'???',role:0,el:0,g:null,cds:[],sh:0,stun:0,burn:0,bd:0,spd:0,dg:0,fc:0}),
+ field:b.field,round:b.round,done:b.done,win:b.done?(b.win?0:1)==side:undefined,reward:b.reward&&b.reward[side],forfeit:m.forfeit,ev:b.log.slice(since),n:b.log.length}};
+async function rkStep(m,now){const b=m.b;if(b.done)return;
+ for(const s of[0,1])if(now-m.seen[s]>25000){m.forfeit=s;b.done=true;b.win=s==1;m.phase='done';b.cur=null;return finishRank(m)}
+ if(m.phase=='lead'){for(const s of[0,1])if(m.lead[s]==null&&now-m.pt>25000)m.lead[s]=rkAlive(b,s)[0];
+  if(m.lead[0]!=null&&m.lead[1]!=null){[0,1].sort(()=>Math.random()-.5).forEach(s=>rkSend(m,s,m.lead[s]));m.phase='choose';m.rt=now}}
+ else if(m.phase=='switch'){for(const s of[0,1])if(m.need[s]&&now-m.pt>25000){rkSend(m,s,rkAlive(b,s)[0]);m.need[s]=false}if(!m.need[0]&&!m.need[1]){m.phase='choose';m.rt=now}}
+ else if(m.phase=='choose'){for(const s of[0,1])if(!m.sel[s]&&now-m.rt>40000)m.sel[s]=rkAuto(m,s);
+  if(m.sel[0]&&m.sel[1]){const w=rkResolve(m);if(w!=null){b.done=true;b.win=w==0;m.phase='done';b.cur=null}}}
+ flush(b);if(b.done)await finishRank(m)}
+app.post('/api/rank/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.now(),since=q.body.since|0,d=q.u.data;
+ const stale=()=>{for(const[x,e]of RQ)if(now-e.seen>10000)RQ.delete(x)};let m=RM.get(RU.get(k));
+ if(a=='info'){stale();const top=(await db.all()).map(x=>x.data).filter(x=>(x.rk|0)>0||x.rkw||x.rkl).map(x=>({name:x.name,rp:x.rk|0,w:x.rkw|0,l:x.rkl|0})).sort((x,y)=>y.rp-x.rp).slice(0,15);
+  return s.json({rp:d.rk|0,w:d.rkw|0,l:d.rkl|0,best:d.rkbest|0,top,queue:[...RQ].filter(([x])=>x!=k).map(([x,e])=>({k:x,name:e.name,rp:e.rp})),inMatch:!!(m&&!m.b.done)})}
+ if(a=='cancel'){RQ.delete(k);return s.json({})}
+ if(a=='ack'){if(m&&m.b.done)RU.delete(k);return s.json({})}
+ if(a=='forfeit'){if(m&&!m.b.done){m.forfeit=m.keys.indexOf(k);m.b.done=true;m.b.win=m.forfeit==1;m.phase='done';m.b.cur=null;await finishRank(m)}return s.json(m?rview(m,m.keys.indexOf(k),since):{})}
+ if(!m||(m.b.done&&a=='queue')){if(a!='queue')return s.json({state:'none'});RU.delete(k);
+  const mine=d.team.map(id=>d.sheep.find(x=>x.id==id&&!G.isEgg(x))).filter(Boolean);if(mine.length<3)return s.json({err:'Ranked needs a full team of 3 sheep. Set your team in the Flock tab.'});
+  stale();const rp=d.rk|0,cur=RQ.get(k),since0=cur?cur.since:now,win=t=>100+(now-t)/1000*10;let o=null;const tg=q.body.target;
+  if(tg){if(RQ.has(tg)&&tg!=k)o=tg;else return s.json({state:'gone'})}
+  else{let best=1e9;for(const[x,e]of RQ){if(x==k)continue;const diff=Math.abs(e.rp-rp);if(diff<=Math.max(win(e.since),win(since0))&&diff<best){best=diff;o=x}}}
+  if(o){RQ.delete(o);RQ.delete(k);m=await mkRank(o,k)}else{RQ.set(k,{seen:now,since:since0,name:d.name,rp});return s.json({state:'wait',waited:Math.round((now-since0)/1000),window:Math.round(win(since0))})}}
+ const side=m.keys.indexOf(k),b=m.b;m.seen[side]=now;
+ if(!b.done&&a=='pick'){const i=q.body.i|0,u=b.u[i];if(!u||u.side!=side||u.hp<=0)return s.json({err:'Pick a sheep that is still up'});
+  if(m.phase=='lead'&&m.lead[side]==null)m.lead[side]=i;else if(m.phase=='switch'&&m.need[side]&&i!=b.act[side]){rkSend(m,side,i);m.need[side]=false}else return s.json({err:'Not now'})}
+ else if(!b.done&&a=='act'){if(m.phase!='choose'||m.sel[side])return s.json({err:'Not now'});const u=b.u[b.act[side]],dg=!!q.body.dodge,mi=dg?-1:q.body.mi|0;if(!u||u.hp<=0)return s.json({err:'?'});
+  if(mi<-1||mi>=u.mv.length||(mi>0&&u.cds[mi]>0))return s.json({err:'Move not ready'});m.sel[side]={mi:Math.max(0,mi),dodge:dg}}
+ await rkStep(m,now);return s.json(rview(m,side,since))}));
 // ---- herds (clans) & herd wars ----
 function bumpWin(c,k){const day=Math.floor(Date.now()/864e5);if(c.dday!=day){c.dday=day;c.dw=0;c.dc=[]}c.bw=(c.bw|0)+1;c.dw=(c.dw|0)+1;c.mw=c.mw||{};c.mw[k]=(c.mw[k]|0)+1;calcR(c)}
 // herd sheep only stay in the flock while you are in a herd that has finished their goal
