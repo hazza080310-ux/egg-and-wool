@@ -14,8 +14,9 @@ let db,MODE='file';
 async function initDb(){
  if(process.env.DATABASE_URL){const{Pool}=require('pg');const url=process.env.DATABASE_URL;
   const p=new Pool({connectionString:url,ssl:/\.render\.com|sslmode=require/.test(url)?{rejectUnauthorized:false}:false});
-  MODE='postgres';await p.query('create table if not exists users(name text primary key,hash text,salt text,data jsonb)');await p.query('create table if not exists clans(key text primary key,data jsonb)');
-  db={cget:async k=>{const r=(await p.query('select data from clans where key=$1',[k])).rows[0];return r&&r.data},cput:async(k,v)=>{await p.query('insert into clans(key,data) values($1,$2) on conflict(key) do update set data=$2',[k,v])},cdel:async k=>{await p.query('delete from clans where key=$1',[k])},call:async()=>(await p.query("select key,data from clans where key not like 'war:%' and key<>'warq'")).rows,
+  MODE='postgres';await p.query('create table if not exists users(name text primary key,hash text,salt text,data jsonb)');await p.query('create table if not exists clans(key text primary key,data jsonb)');await p.query('create table if not exists feedback(id bigserial primary key,t bigint,name text,cat text,msg text)');
+  db={fadd:async r=>{await p.query('insert into feedback(t,name,cat,msg) values($1,$2,$3,$4)',[r.t,r.name,r.cat,r.msg])},fprune:async c=>{await p.query('delete from feedback where t<$1',[c])},fall:async()=>(await p.query('select t,name,cat,msg from feedback order by t desc')).rows,
+   cget:async k=>{const r=(await p.query('select data from clans where key=$1',[k])).rows[0];return r&&r.data},cput:async(k,v)=>{await p.query('insert into clans(key,data) values($1,$2) on conflict(key) do update set data=$2',[k,v])},cdel:async k=>{await p.query('delete from clans where key=$1',[k])},call:async()=>(await p.query("select key,data from clans where key not like 'war:%' and key<>'warq'")).rows,
    get:async n=>(await p.query('select * from users where name=$1',[n])).rows[0],
    put:async(n,u)=>{await p.query('insert into users(name,hash,salt,data) values($1,$2,$3,$4) on conflict(name) do update set data=$4',[n,u.hash,u.salt,u.data])},
    all:async()=>(await p.query('select name,data from users')).rows};
@@ -23,7 +24,8 @@ async function initDb(){
   const f=path.join(process.env.DATA_DIR||__dirname,'data.json');let m={};try{m=JSON.parse(fs.readFileSync(f))}catch{}
   let tm;const save=()=>{clearTimeout(tm);tm=setTimeout(()=>fs.writeFile(f,JSON.stringify(m),()=>{}),400)};
   const cf=path.join(process.env.DATA_DIR||__dirname,'clans.json');let cm={};try{cm=JSON.parse(fs.readFileSync(cf))}catch{}let ct;const csave=()=>{clearTimeout(ct);ct=setTimeout(()=>fs.writeFile(cf,JSON.stringify(cm),()=>{}),400)};
-  db={cget:async k=>cm[k],cput:async(k,v)=>{cm[k]=v;csave()},cdel:async k=>{delete cm[k];csave()},call:async()=>Object.entries(cm).filter(([k])=>!k.startsWith('war:')&&k!='warq').map(([key,data])=>({key,data})),get:async n=>m[n],put:async(n,u)=>{m[n]=u;save()},all:async()=>Object.entries(m).map(([name,u])=>({name,data:u.data}))};
+  const ff=path.join(process.env.DATA_DIR||__dirname,'feedback.json');let fl=[];try{fl=JSON.parse(fs.readFileSync(ff))}catch{}let ft;const fsave=()=>{clearTimeout(ft);ft=setTimeout(()=>fs.writeFile(ff,JSON.stringify(fl),()=>{}),400)};
+  db={fadd:async r=>{fl.push(r);fsave()},fprune:async c=>{const n=fl.length;fl=fl.filter(x=>x.t>=c);if(fl.length!=n)fsave()},fall:async()=>fl.slice().sort((a,b)=>b.t-a.t),cget:async k=>cm[k],cput:async(k,v)=>{cm[k]=v;csave()},cdel:async k=>{delete cm[k];csave()},call:async()=>Object.entries(cm).filter(([k])=>!k.startsWith('war:')&&k!='warq').map(([key,data])=>({key,data})),get:async n=>m[n],put:async(n,u)=>{m[n]=u;save()},all:async()=>Object.entries(m).map(([name,u])=>({name,data:u.data}))};
  }}
 const H=f=>(q,s)=>f(q,s).catch(e=>{console.error(e);s.status(500).json({err:'Server error'})});
 const sign=(n,h)=>n+'.'+crypto.createHmac('sha256',SECRET).update(n+h).digest('hex');
@@ -397,5 +399,19 @@ app.post('/api/act/:a',auth,H(async(q,s)=>{const f=A[q.params.a];if(!f)return s.
 const boardC=memo(15000,async()=>(await db.all()).map(x=>({name:x.data.name,rating:x.data.rating,wins:x.data.wins,sheep:x.data.sheep.length,best:x.data.best||0})).sort((a,b)=>b.rating-a.rating).slice(0,25));
 app.get('/api/board',H(async(q,s)=>s.json(await boardC())));
 app.get('/api/farm/:n',H(async(q,s)=>{const u=await db.get(q.params.n.toLowerCase());if(!u)return s.sendStatus(404);const d=u.data;s.json({name:d.name,rating:d.rating,sheep:d.sheep.slice().sort((a,b)=>b.r-a.r).slice(0,30)})}));
+// ---- player feedback: one message per player per day, saved in the database, deleted after 3 days ----
+const FB_TTL=3*864e5,FB_CATS=['Bug','Idea','Other'];
+A.feedback=async(d,b)=>{const now=Date.now(),left=(d.fbt||0)+864e5-now;if(left>0)return{err:'You can send one feedback message per day. Try again in about '+Math.ceil(left/36e5)+'h.'};
+ const msg=String(b.msg||'').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g,'').trim().slice(0,500);if(msg.length<5)return{err:'Please write at least 5 characters.'};
+ await db.fprune(now-FB_TTL);await db.fadd({t:now,name:d.name,cat:FB_CATS.includes(b.cat)?b.cat:'Other',msg});d.fbt=now;return{ok:1}};
+// reading it: open /api/feedback.csv?key=YOUR_ADMIN_KEY (the ADMIN_KEY environment variable) - the CSV opens in Excel / Google Sheets
+const same=(a,b)=>a.length==b.length&&crypto.timingSafeEqual(Buffer.from(a),Buffer.from(b));
+const adminOk=q=>{const k=process.env.ADMIN_KEY||'';return k.length>=8&&same(String(q.query.key||''),k)};
+const fbRows=async()=>{await db.fprune(Date.now()-FB_TTL);return(await db.fall()).map(r=>({t:+r.t,name:r.name,cat:r.cat,msg:r.msg}))};
+const csvCell=v=>{v=String(v);if(/^[=+\-@\t\r]/.test(v))v="'"+v;return'"'+v.replace(/"/g,'""')+'"'};
+app.get('/api/feedback/list',H(async(q,s)=>{if(!adminOk(q))return s.sendStatus(404);s.json(await fbRows())}));
+app.get('/api/feedback.csv',H(async(q,s)=>{if(!adminOk(q))return s.sendStatus(404);const rows=await fbRows();
+ s.set({'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'inline; filename="feedback.csv"','Cache-Control':'no-store'});
+ s.send('\ufeff'+['Sent (UTC),Player,Category,Message',...rows.map(r=>[new Date(r.t).toISOString().replace('T',' ').slice(0,19),r.name,r.cat,r.msg].map(csvCell).join(','))].join('\r\n'))}));
 app.get('/api/health',(q,s)=>s.json({storage:MODE}));
-initDb().then(()=>{if(MODE=='file'&&process.env.RENDER)console.warn('WARNING: no DATABASE_URL set - saves will be WIPED when this server sleeps or redeploys!');return app.listen(process.env.PORT||3000,()=>console.log('EGG & WOOL running ('+MODE+' storage)'))}).catch(e=>{console.error(e);process.exit(1)});
+initDb().then(()=>{db.fprune(Date.now()-FB_TTL).catch(()=>{});setInterval(()=>db.fprune(Date.now()-FB_TTL).catch(()=>{}),36e5).unref();if(MODE=='file'&&process.env.RENDER)console.warn('WARNING: no DATABASE_URL set - saves will be WIPED when this server sleeps or redeploys!');return app.listen(process.env.PORT||3000,()=>console.log('EGG & WOOL running ('+MODE+' storage)'))}).catch(e=>{console.error(e);process.exit(1)});
