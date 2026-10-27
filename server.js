@@ -169,13 +169,13 @@ const BT=new Map();
 const unit=(s,side)=>{const st=G.stats(s),p=s.sp?G.SPM[s.sp].pas:null,u={side,name:s.name,role:s.role,el:s.el,g:s,hp:st.hp,max:st.hp,atk:Math.round(st.atk*(p=='mighty'?1.3:1)),def:st.def,spd:Math.round(st.spd*(p=='haste'?1.5:1)),cds:[0,0,0,0,0,0,0,0,0,0],burn:0,mv:G.moves(s),sh:0,shd:{},stun:0,imm:0,bd:s.bd|0,dg:0,fc:0,endured:0,trait:s.trait,pas:p};if(p=='bulwark')addSh(u,'Bulwark',20);return u};
 const elm=G.elm;
 const E=(b,m,a,to,v,k)=>b.ev.push({m,a,to:to||[],v,k,hp:b.u.map(x=>x.hp),sh:b.u.map(x=>x.sh)});
-function hit(u,x,mult,b,area){const e=elm(u.el,x.el),crit=Math.random()<(u.trait=='lucky'?.2:.08);
+function hit(u,x,mult,b,area){const e=elm(u.el,x.el),troll=!!(u.g&&u.g.sp=='best'),crit=!troll&&Math.random()<(u.trait=='lucky'?.2:.08);
  // Dodge stance: a sheep that spent its turn dodging evades with G.dodgeChance (and earns Focus); if it fails it still takes 20% less
  // otherwise only a small passive chance: faster targets can dodge (up to 12%)
  if(x.dg){if(Math.random()<G.dodgeChance(x,u,area)){x.fc=1;return{v:0,crit:false,e,miss:true,perfect:true}}}
  else if(Math.random()<Math.min(.12,Math.max(0,(x.spd-u.spd)/(Math.max(1,u.spd)*5))))return{v:0,crit:false,e,miss:true};
  const vuln=(x.stun||x.burn>0)?1.15:1,fld=b&&b.field!=null&&u.el==b.field?1.2:1,foc=u.fc?1.3:1,gl=x.dg?.8:1;
- const v=Math.max(1,Math.round(u.atk*mult*e*vuln*fld*foc*gl*(crit?1.5:1)*(.9+Math.random()*.2)*100/(100+x.def)));let rem=v;for(const k of Object.keys(x.shd)){const a=Math.min(x.shd[k],rem);x.shd[k]-=a;rem-=a;if(x.shd[k]<=0)delete x.shd[k]}x.sh=Object.values(x.shd).reduce((p,c)=>p+c,0);x.hp=Math.max(0,x.hp-rem);
+ const v=troll?1:Math.max(1,Math.round(u.atk*mult*e*vuln*fld*foc*gl*(crit?1.5:1)*(.9+Math.random()*.2)*100/(100+x.def)));let rem=v;for(const k of Object.keys(x.shd)){const a=Math.min(x.shd[k],rem);x.shd[k]-=a;rem-=a;if(x.shd[k]<=0)delete x.shd[k]}x.sh=Object.values(x.shd).reduce((p,c)=>p+c,0);x.hp=Math.max(0,x.hp-rem);
  // bond: a close sheep refuses to go down once per battle
  let endure=false;if(x.hp<=0&&x.bd>=50&&!x.endured){x.endured=1;x.hp=1;endure=true}
  if(x.pas=='thorns'&&v>0)u.hp=Math.max(0,u.hp-Math.round(v*.2));if(u.pas=='vamp')u.hp=Math.min(u.max,u.hp+Math.round(v*.25));return{v,crit,e,vuln:vuln>1,endure,x,glance:!!x.dg,focus:foc>1}}
@@ -265,6 +265,8 @@ A.bact=async(d,body,q)=>{const b=BT.get(q.n);if(!b||b.done||b.cur==null)return{e
  if(mi<-1||mi>=u.mv.length||(mi>0&&u.cds[mi]>0))return{err:'Move not ready'};try{exec(b,b.cur,mi,body.t|0)}catch(e){console.error('exec',e)}b.cur=null;try{advance(b)}catch(e){console.error('advance',e);b.done=true;b.win=false;b.cur=null}if(b.done){finish(d,b);if(b.war)await warDone(d,b,q)}return{bt:bv(b)}};
 // ---- live PvP (polling) ----
 const LQ=new Map(),LM=new Map(),LU=new Map(),flush=b=>{b.log.push(...b.ev);b.ev=[]};
+// every live turn lasts TURN_MS; after that the server picks a move for the sleepy player (the clients show a countdown)
+const TURN_MS=45000,RK_MOVE_MS=40000,RK_PICK_MS=25000;
 async function mkMatch(k0,k1){const us=await Promise.all([k0,k1].map(x=>db.get(x))),team=us.map(u=>{tick(u.data);return u.data.team.map(id=>u.data.sheep.find(x=>x.id==id))});
  const b={u:[...team[0].map(x=>unit(x,0)),...team[1].map(x=>unit(x,1))],q:[],cur:null,done:false,ev:[],log:[],pvp:true,turnAt:Date.now()};
  const m={b,keys:[k0,k1],names:us.map(u=>u.data.name),team:team.map(t=>t.map(x=>x.id)),seen:[Date.now(),Date.now()],t:Date.now()};
@@ -272,7 +274,7 @@ async function mkMatch(k0,k1){const us=await Promise.all([k0,k1].map(x=>db.get(x
 async function finishLive(m){const b=m.b;if(b.paid)return;b.paid=1;b.reward=[null,null];
  for(const s of[0,1]){const u=await db.get(m.keys[s]);if(!u)continue;const d=u.data,win=(b.win?0:1)==s,c=win?60:15;addXp(d,win?20:6);if(win)prog(d,'win');d.wins+=win?1:0;d.losses+=win?0:1;d.rating=Math.max(0,d.rating+(win?25:-15));d.coins+=c;
   m.team[s].forEach(id=>{const sh=d.sheep.find(x=>x.id==id);gain(sh,win?1:.5);bond(d,sh,win?2:1)});addRp(d,win?1:0);b.reward[s]={coins:c,rating:win?25:-15};if(win&&d.clan){const cc=await db.cget(d.clan);if(cc){bumpWin(cc,m.keys[s]);await db.cput(cc.key,cc)}}checkAch(d);await db.put(m.keys[s],u)}}
-const lview=(m,side,since)=>{const b=m.b;return{state:'match',me:side,oname:m.names[1-side],u:vu(b),q:b.q.filter(i=>b.u[i].hp>0),field:b.field,cur:b.cur,done:b.done,win:b.done?(b.win?0:1)==side:undefined,reward:b.reward&&b.reward[side],ev:b.log.slice(since),n:b.log.length}};
+const lview=(m,side,since)=>{const b=m.b;return{state:'match',me:side,oname:m.names[1-side],u:vu(b),q:b.q.filter(i=>b.u[i].hp>0),field:b.field,cur:b.cur,tl:b.cur!=null&&!b.done?Math.max(0,TURN_MS-(Date.now()-b.turnAt)):null,done:b.done,win:b.done?(b.win?0:1)==side:undefined,reward:b.reward&&b.reward[side],ev:b.log.slice(since),n:b.log.length}};
 app.post('/api/live/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.now(),since=q.body.since|0;let m=LM.get(LU.get(k));
  const forfeit=async side=>{m.b.done=true;m.b.win=side==1;m.b.cur=null;await finishLive(m)};
  if(a=='list'){for(const[x,e]of LQ)if(now-e.seen>12000)LQ.delete(x);return s.json({list:[...LQ].filter(([x])=>x!=k).map(([x,e])=>({k:x,name:e.name,rating:e.rating}))})}
@@ -280,9 +282,9 @@ app.post('/api/live/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.no
  if(!m){if(a!='join')return s.json({state:'none'});for(const[x,e]of LQ)if(now-e.seen>12000)LQ.delete(x);for(const[id,mm]of LM)if(now-mm.t>36e5)LM.delete(id);
   const tg=q.body.target,o=tg?(LQ.has(tg)&&tg!=k?tg:null):[...LQ.keys()].find(x=>x!=k);if(tg&&!o)return s.json({state:'gone'});if(o){LQ.delete(o);LQ.delete(k);m=await mkMatch(o,k)}else{LQ.set(k,{seen:now,name:q.u.data.name,rating:q.u.data.rating});return s.json({state:'wait'})}}
  const side=m.keys.indexOf(k),b=m.b;m.seen[side]=now;
- if(a=='act'){if(b.done||b.cur==null)return s.json({err:'No battle in progress'});const u=b.u[b.cur];if(u.side!=side)return s.json({err:'Not your turn'});const mi=q.body.dodge?-1:q.body.mi|0;
+ if(a=='act'){if(b.done||b.cur==null)return s.json({err:'No battle in progress'});const u=b.u[b.cur];if(u.side!=side)return s.json({...lview(m,side,since),err:'Not your turn'});const mi=q.body.dodge?-1:q.body.mi|0;
   if(mi<-1||mi>=u.mv.length||(mi>0&&u.cds[mi]>0))return s.json({err:'Move not ready'});exec(b,b.cur,mi,q.body.t|0);b.cur=null;advance(b);flush(b);if(b.done)await finishLive(m);return s.json(lview(m,side,since))}
- if(!b.done){if(now-m.seen[1-side]>20000)await forfeit(1-side);else if(b.cur!=null&&now-b.turnAt>30000){ai(b,b.cur);advance(b);flush(b);if(b.done)await finishLive(m)}}
+ if(!b.done){if(now-m.seen[1-side]>20000)await forfeit(1-side);else if(b.cur!=null&&now-b.turnAt>TURN_MS){E(b,`⏱ ${b.u[b.cur].name} ran out of time and moved automatically!`,null,[],0,'x');ai(b,b.cur);advance(b);flush(b);if(b.done)await finishLive(m)}}
  s.json(lview(m,side,since))}));
 // ---- ranked PvP: live 1v1, the rest of the team waits in reserve (polling) ----
 const RQ=new Map(),RM=new Map(),RU=new Map();
@@ -321,13 +323,13 @@ async function finishRank(m){const b=m.b;if(b.paid)return;b.paid=1;b.reward=[nul
   const t0=tierOf(before),t1=tierOf(after);b.reward[s]={coins:c,rp:after-before,rpNow:after,tier:t1[0]+' '+t1[1],tierUp:t1[2]>t0[2]};checkAch(d);await db.put(m.keys[s],u)}}
 const rview=(m,side,since)=>{const b=m.b,o=1-side;return{state:'rank',me:side,oname:m.names[o],orp:m.rp[o],rp:m.rp[side],phase:m.phase,act:b.act,need:m.need,lead:m.lead.map(x=>x!=null),sel:m.sel.map(x=>!!x),
  u:b.u.map(x=>x.side==side||x.seen?vu({u:[x]})[0]:{hidden:1,side:x.side,hp:x.hp,max:x.max,off:true,name:'???',role:0,el:0,g:null,cds:[],sh:0,stun:0,burn:0,bd:0,spd:0,dg:0,fc:0}),
- field:b.field,round:b.round,done:b.done,win:b.done?(b.win?0:1)==side:undefined,reward:b.reward&&b.reward[side],forfeit:m.forfeit,ev:b.log.slice(since),n:b.log.length}};
+ field:b.field,round:b.round,done:b.done,win:b.done?(b.win?0:1)==side:undefined,reward:b.reward&&b.reward[side],forfeit:m.forfeit,tl:b.done?null:m.phase=='choose'?Math.max(0,RK_MOVE_MS-(Date.now()-m.rt)):Math.max(0,RK_PICK_MS-(Date.now()-m.pt)),ev:b.log.slice(since),n:b.log.length}};
 async function rkStep(m,now){const b=m.b;if(b.done)return;
- for(const s of[0,1])if(now-m.seen[s]>25000){m.forfeit=s;b.done=true;b.win=s==1;m.phase='done';b.cur=null;return finishRank(m)}
- if(m.phase=='lead'){for(const s of[0,1])if(m.lead[s]==null&&now-m.pt>25000)m.lead[s]=rkAlive(b,s)[0];
+ for(const s of[0,1])if(now-m.seen[s]>RK_PICK_MS){m.forfeit=s;b.done=true;b.win=s==1;m.phase='done';b.cur=null;return finishRank(m)}
+ if(m.phase=='lead'){for(const s of[0,1])if(m.lead[s]==null&&now-m.pt>RK_PICK_MS)m.lead[s]=rkAlive(b,s)[0];
   if(m.lead[0]!=null&&m.lead[1]!=null){[0,1].sort(()=>Math.random()-.5).forEach(s=>rkSend(m,s,m.lead[s]));m.phase='choose';m.rt=now}}
- else if(m.phase=='switch'){for(const s of[0,1])if(m.need[s]&&now-m.pt>25000){rkSend(m,s,rkAlive(b,s)[0]);m.need[s]=false}if(!m.need[0]&&!m.need[1]){m.phase='choose';m.rt=now}}
- else if(m.phase=='choose'){for(const s of[0,1])if(!m.sel[s]&&now-m.rt>40000)m.sel[s]=rkAuto(m,s);
+ else if(m.phase=='switch'){for(const s of[0,1])if(m.need[s]&&now-m.pt>RK_PICK_MS){rkSend(m,s,rkAlive(b,s)[0]);m.need[s]=false}if(!m.need[0]&&!m.need[1]){m.phase='choose';m.rt=now}}
+ else if(m.phase=='choose'){for(const s of[0,1])if(!m.sel[s]&&now-m.rt>RK_MOVE_MS)m.sel[s]=rkAuto(m,s);
   if(m.sel[0]&&m.sel[1]){const w=rkResolve(m);if(w!=null){b.done=true;b.win=w==0;m.phase='done';b.cur=null}}}
  flush(b);if(b.done)await finishRank(m)}
 app.post('/api/rank/:a',auth,H(async(q,s)=>{const k=q.n,a=q.params.a,now=Date.now(),since=q.body.since|0,d=q.u.data;
@@ -409,6 +411,10 @@ const same=(a,b)=>a.length==b.length&&crypto.timingSafeEqual(Buffer.from(a),Buff
 const adminOk=q=>{const k=process.env.ADMIN_KEY||'';return k.length>=8&&same(String(q.query.key||''),k)};
 const fbRows=async()=>{await db.fprune(Date.now()-FB_TTL);return(await db.fall()).map(r=>({t:+r.t,name:r.name,cat:r.cat,msg:r.msg}))};
 const csvCell=v=>{v=String(v);if(/^[=+\-@\t\r]/.test(v))v="'"+v;return'"'+v.replace(/"/g,'""')+'"'};
+// give (or take back) the one-of-a-kind sheep: /api/admin/give?key=ADMIN_KEY&player=NAME   (add &action=take to remove it again)
+app.get('/api/admin/give',H(async(q,s)=>{if(!adminOk(q))return s.sendStatus(404);const n=String(q.query.player||'').trim().toLowerCase(),u=n&&await db.get(n);if(!u)return s.status(404).json({ok:0,msg:'No player called "'+n+'"'});const d=u.data,had=d.sheep.findIndex(x=>x.sp=='best');
+ if(q.query.action=='take'){if(had<0)return s.json({ok:0,msg:n+' does not have it'});d.sheep.splice(had,1);d.team=d.team.filter(id=>id!='sp_best');await db.put(n,u);return s.json({ok:1,msg:'Took The Best Sheep In The Game away from '+n})}
+ if(had>=0)return s.json({ok:0,msg:n+' already has it'});d.sheep.push(G.mkSpecial('best'));await db.put(n,u);s.json({ok:1,msg:'Gave The Best Sheep In The Game to '+n+'. They will see it the next time their game updates.'})}));
 app.get('/api/feedback/list',H(async(q,s)=>{if(!adminOk(q))return s.sendStatus(404);s.json(await fbRows())}));
 app.get('/api/feedback.csv',H(async(q,s)=>{if(!adminOk(q))return s.sendStatus(404);const rows=await fbRows();
  s.set({'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'inline; filename="feedback.csv"','Cache-Control':'no-store'});
